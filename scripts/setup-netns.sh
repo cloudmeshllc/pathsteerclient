@@ -22,3 +22,9 @@ ip route add 104.204.136.48/28 via 10.201.1.2 dev veth_fa table service 2>/dev/n
 ip rule add from 104.204.136.48/28 lookup service priority 90 2>/dev/null || true
 ip netns exec ns_fa ip route add 104.204.136.48/28 via 10.201.1.1 dev veth_fa_i 2>/dev/null || true
 ip netns exec ns_fa iptables -t nat -A POSTROUTING -s 104.204.136.48/28 -o enp1s0 -j MASQUERADE 2>/dev/null || true
+
+# Service subnet routing through fiber tunnel
+ip route add 104.204.136.48/28 via 10.201.1.2 dev veth_fa table service 2>/dev/null || true
+ip rule add from 104.204.136.48/28 lookup service priority 90 2>/dev/null || true
+ip netns exec ns_fa ip route add 104.204.136.48/28 via 10.201.1.1 dev veth_fa_i 2>/dev/null || true
+ip netns exec ns_fa iptables -t nat -A POSTROUTING -s 104.204.136.48/28 -o enp1s0 -j MASQUERADE 2>/dev/null || true
