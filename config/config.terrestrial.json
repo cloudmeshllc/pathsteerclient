@@ -1,0 +1,49 @@
+{
+  "_schema_version": "1.0.0",
+  "_description": "PathSteer Guardian - Terrestrial Mode (Fiber only)",
+  
+  "node": {
+    "role": "edge",
+    "id": "edge-office-1",
+    "description": "Office Edge - Dual Fiber"
+  },
+  
+  "topology_mode": "terrestrial",
+  
+  "uplinks": {
+    "cell_a": {"enabled": false},
+    "cell_b": {"enabled": false},
+    "sl_a": {"enabled": false},
+    "sl_b": {"enabled": false},
+    "fiber1": {
+      "enabled": true,
+      "interface": "enp1s0",
+      "type": "fiber",
+      "description": "Primary ISP",
+      "netns": "ns_fiber1",
+      "gateway": "dhcp"
+    },
+    "fiber2": {
+      "enabled": true,
+      "interface": "enp2s0",
+      "type": "fiber",
+      "description": "Backup ISP",
+      "netns": "ns_fiber2",
+      "gateway": "dhcp"
+    }
+  },
+  
+  "controllers": {
+    "ctrl_a": {
+      "enabled": true,
+      "name": "Controller-A",
+      "wg_endpoint": "95.173.216.163:51820",
+      "wg_pubkey": "REPLACE_WITH_CONTROLLER_A_PUBKEY"
+    },
+    "ctrl_b": {
+      "enabled": false
+    }
+  },
+  
+  "_note": "Terrestrial mode: simple A/B failover between fiber links, less chaos, more predictable"
+}

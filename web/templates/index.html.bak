@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathSteer Guardian</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --panel: #12121a;
+            --card: #1a1a2e;
+            --border: #2a2a4e;
+            --text: #e0e0e0;
+            --muted: #666;
+            --blue: #00d4ff;
+            --purple: #7b2cbf;
+            --green: #00ff88;
+            --yellow: #ffaa00;
+            --orange: #ff6600;
+            --red: #ff4444;
+            --sl-blue: #1DA1F2;
+            --tmo-magenta: #E20074;
+            --att-blue: #00A8E0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'SF Mono', 'Fira Code', monospace; 
+            background: var(--bg); 
+            color: var(--text); 
+            font-size: 11px;
+            overflow: hidden;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 300px 1fr 340px;
+            grid-template-rows: 48px 1fr;
+            height: 100vh;
+            gap: 1px;
+            background: var(--border);
+        }
+        
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, var(--panel), #1a1a30);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+        }
+        .logo { display: flex; align-items: center; gap: 10px; }
+        .logo h1 { font-size: 14px; font-weight: 700; letter-spacing: 2px; }
+        .logo .g { color: var(--blue); }
+        
+        .badges { display: flex; gap: 10px; align-items: center; }
+        .badge {
+            padding: 5px 12px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .mode-training { background: rgba(0,212,255,0.15); color: var(--blue); border: 1px solid var(--blue); }
+        .mode-tripwire { background: rgba(255,170,0,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+        .mode-mirror { background: rgba(0,255,136,0.15); color: var(--green); border: 1px solid var(--green); }
+        .state-normal { background: rgba(0,255,136,0.1); color: var(--green); }
+        .state-prepare { background: rgba(255,170,0,0.1); color: var(--yellow); animation: pulse 1.5s infinite; }
+        .state-protect { background: rgba(255,102,0,0.15); color: var(--orange); animation: pulse 0.8s infinite; }
+        .state-switching { background: rgba(255,68,68,0.15); color: var(--red); animation: pulse 0.5s infinite; }
+        .state-holding { background: rgba(123,44,191,0.15); color: var(--purple); }
+        .state-offline { background: rgba(100,100,100,0.2); color: #666; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+        
+        .speed-display {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--blue);
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+        .speed-display .unit { font-size: 11px; color: var(--muted); }
+        
+        /* Panels */
+        .panel { background: var(--panel); padding: 10px; overflow-y: auto; }
+        .panel h2 {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        /* Training Banner */
+        .training-banner {
+            background: repeating-linear-gradient(45deg, var(--card), var(--card) 10px, var(--bg) 10px, var(--bg) 20px);
+            border: 2px solid var(--blue);
+            padding: 8px;
+            text-align: center;
+            font-weight: 700;
+            color: var(--blue);
+            margin-bottom: 10px;
+            display: none;
+        }
+        .training-banner.active { display: block; }
+        
+        /* Uplink Cards */
+        .uplink-card {
+            background: var(--card);
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 6px;
+            border: 2px solid var(--border);
+            position: relative;
+            transition: all 0.2s;
+        }
+        .uplink-card.active { border-color: var(--green); box-shadow: 0 0 12px rgba(0,255,136,0.2); }
+        .uplink-card.active::after {
+            content: '● ACTIVE';
+            position: absolute;
+            top: 6px;
+            right: 8px;
+            font-size: 8px;
+            color: var(--green);
+            animation: blink 1s infinite;
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .uplink-card.unavailable { opacity: 0.4; }
+        .uplink-card.lte { border-left: 3px solid var(--tmo-magenta); }
+        .uplink-card.lte.att { border-left-color: var(--att-blue); }
+        .uplink-card.starlink { border-left: 3px solid var(--sl-blue); }
+        .uplink-card.fiber { border-left: 3px solid var(--green); }
+        
+        .uplink-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .uplink-name { font-weight: 700; font-size: 11px; }
+        .uplink-type { font-size: 9px; color: var(--muted); }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .metric {
+            background: var(--bg);
+            padding: 4px;
+            border-radius: 2px;
+            text-align: center;
+        }
+        .metric-label { font-size: 8px; color: var(--muted); text-transform: uppercase; }
+        .metric-value { font-size: 11px; font-weight: 600; color: var(--blue); }
+        .metric-value.warn { color: var(--yellow); }
+        .metric-value.bad { color: var(--red); }
+        
+        .sparkline {
+            height: 16px;
+            background: var(--bg);
+            border-radius: 2px;
+            margin-top: 4px;
+            display: flex;
+            align-items: flex-end;
+            overflow: hidden;
+        }
+        .spark-bar {
+            flex: 1;
+            background: var(--blue);
+            margin: 0 1px;
+            min-height: 1px;
+            transition: height 0.1s;
+        }
+        .spark-bar.warn { background: var(--yellow); }
+        .spark-bar.bad { background: var(--red); }
+        
+        .uplink-actions { margin-top: 6px; display: flex; gap: 4px; }
+        .btn-fail {
+            flex: 1;
+            padding: 4px;
+            background: transparent;
+            border: 1px solid var(--red);
+            color: var(--red);
+            font-size: 8px;
+            border-radius: 2px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+        .btn-fail:hover { background: var(--red); color: var(--bg); }
+        
+        /* GPS Panel */
+        .gps-panel {
+            background: var(--card);
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .gps-coords { font-family: monospace; color: var(--blue); font-size: 12px; }
+        .gps-meta { font-size: 9px; color: var(--muted); margin-top: 4px; }
+        
+        /* Risk Gauge */
+        .risk-panel {
+            background: var(--card);
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .risk-header { display: flex; justify-content: space-between; align-items: center; }
+        .risk-value { font-size: 20px; font-weight: 700; }
+        .risk-rec { font-size: 10px; padding: 3px 8px; border-radius: 2px; }
+        .risk-bar { height: 6px; background: var(--bg); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+        .risk-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); transition: width 0.3s; }
+        
+        /* Map */
+        .map-panel { position: relative; }
+        #map { height: 100%; background: var(--bg); }
+        .map-legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(18,18,26,0.95);
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 9px;
+            z-index: 1000;
+        }
+        .legend-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+        
+        /* Right Panel */
+        .countdown-panel {
+            background: linear-gradient(135deg, rgba(255,102,0,0.1), rgba(255,170,0,0.05));
+            border: 1px solid var(--orange);
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+            display: none;
+        }
+        .countdown-panel.active { display: block; }
+        .countdown-title { font-weight: 700; font-size: 11px; }
+        .countdown-trigger { font-size: 9px; color: var(--yellow); margin-top: 4px; }
+        .countdown-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+        .countdown-item { text-align: center; }
+        .countdown-num { font-size: 22px; font-weight: 700; color: var(--orange); }
+        .countdown-label { font-size: 8px; color: var(--muted); text-transform: uppercase; }
+        
+        .flap-banner {
+            background: rgba(123,44,191,0.2);
+            border: 1px solid var(--purple);
+            padding: 6px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 9px;
+            color: var(--purple);
+            margin-bottom: 8px;
+            display: none;
+        }
+        .flap-banner.active { display: block; }
+        
+        /* Controls */
+        .control-group { margin-bottom: 10px; }
+        .btn-row { display: flex; gap: 4px; }
+        .btn {
+            flex: 1;
+            padding: 8px 4px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 9px;
+            font-weight: 600;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: var(--border); }
+        .btn.active { background: var(--blue); color: var(--bg); border-color: var(--blue); }
+        .btn.danger { border-color: var(--red); color: var(--red); }
+        .btn.danger:hover { background: var(--red); color: var(--bg); }
+        .btn-wide { width: 100%; }
+        
+        /* Decision Feed */
+        .feed { max-height: 200px; overflow-y: auto; }
+        .feed-item {
+            background: var(--card);
+            padding: 6px;
+            margin-bottom: 3px;
+            border-radius: 3px;
+            font-size: 9px;
+            border-left: 2px solid var(--border);
+        }
+        .feed-item.tripwire { border-left-color: var(--orange); background: rgba(255,102,0,0.05); }
+        .feed-item.switch { border-left-color: var(--purple); }
+        .feed-item.predict { border-left-color: var(--blue); }
+        .feed-item.mode { border-left-color: var(--green); }
+        .feed-time { color: var(--muted); font-size: 8px; }
+        .feed-msg { margin-top: 2px; }
+        .feed-reason { color: var(--yellow); }
+        
+        /* Controller Panel */
+        .controller-panel {
+            background: var(--card);
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .ctrl-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+        .ctrl-label { font-size: 9px; color: var(--muted); }
+        .ctrl-value { font-size: 10px; color: var(--blue); }
+        .ctrl-value.active { color: var(--green); }
+        
+        /* Remote Targets */
+        .targets-panel { font-size: 9px; color: var(--muted); }
+        .target-row { display: flex; justify-content: space-between; margin: 2px 0; }
+        .target-status { color: var(--green); }
+        .target-status.offline { color: var(--red); }
+    </style>
+</head>
+<body>
+<div class="dashboard">
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">
+            <h1>PATHSTEER <span class="g">GUARDIAN</span></h1>
+        </div>
+        <div class="speed-display">
+            <span id="speed-val">0</span>
+            <span class="unit">mph</span>
+        </div>
+        <div class="badges">
+            <span class="badge mode-tripwire" id="mode-badge">TRIPWIRE</span>
+            <span class="badge state-normal" id="state-badge">NORMAL</span>
+            <span style="font-size:9px;color:var(--muted)" id="node-id">--</span>
+        </div>
+    </header>
+    
+    <!-- Left: Uplinks -->
+    <div class="panel">
+        <div class="training-banner" id="training-banner">⚠ TRAINING MODE — NO ACTUATION</div>
+        
+        <h2>Uplinks</h2>
+        <div id="uplinks"></div>
+        
+        <h2>GPS</h2>
+        <div class="gps-panel">
+            <div class="gps-coords" id="gps-coords">--.------, --.------</div>
+            <div class="gps-meta">
+                Heading: <span id="gps-heading">--</span>° | Alt: <span id="gps-alt">--</span>m
+            </div>
+        </div>
+        
+        <h2>Global Risk</h2>
+        <div class="risk-panel">
+            <div class="risk-header">
+                <span class="risk-value" id="risk-pct">0%</span>
+                <span class="risk-rec" id="risk-rec" style="background:rgba(0,255,136,0.2);color:var(--green)">NORMAL</span>
+            </div>
+            <div class="risk-bar"><div class="risk-fill" id="risk-fill" style="width:0%"></div></div>
+        </div>
+    </div>
+    
+    <!-- Center: Map -->
+    <div class="panel map-panel">
+        <div id="map"></div>
+        <div class="map-legend">
+            <div style="font-weight:600;margin-bottom:4px">Signal Map</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--sl-blue)"></div> Starlink</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--tmo-magenta)"></div> T-Mobile</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--att-blue)"></div> AT&T</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--red)"></div> High Risk Zone</div>
+        </div>
+    </div>
+    
+    <!-- Right: Controls & Status -->
+    <div class="panel">
+        <div class="flap-banner" id="flap-banner">⚡ FLAP SUPPRESSED — Max switches reached</div>
+        
+        <div class="countdown-panel" id="countdown-panel">
+            <div class="countdown-title">PROTECTION ACTIVE</div>
+            <div class="countdown-trigger">Trigger: <span id="trigger-reason">--</span></div>
+            <div class="countdown-grid">
+                <div class="countdown-item">
+                    <div class="countdown-num" id="cd-hold">8</div>
+                    <div class="countdown-label">Hold</div>
+                </div>
+                <div class="countdown-item">
+                    <div class="countdown-num" id="cd-clean">5</div>
+                    <div class="countdown-label">Clean</div>
+                </div>
+                <div class="countdown-item">
+                    <div class="countdown-num" id="cd-switches">0</div>
+                    <div class="countdown-label">Switches</div>
+                </div>
+            </div>
+        </div>
+        
+        <h2>Mode</h2>
+        <div class="control-group">
+            <div class="btn-row">
+                <button class="btn" id="btn-training" onclick="setMode('training')">TRAINING</button>
+                <button class="btn active" id="btn-tripwire" onclick="setMode('tripwire')">TRIPWIRE</button>
+                <button class="btn" id="btn-mirror" onclick="setMode('mirror')">MIRROR</button>
+            </div>
+        </div>
+        
+        <h2>Manual Trigger</h2>
+        <div class="control-group">
+            <button class="btn btn-wide danger" onclick="triggerProtection()">⚡ TRIGGER PROTECTION NOW</button>
+        </div>
+        
+        <h2>Controller</h2>
+        <div class="controller-panel">
+            <div class="ctrl-row">
+                <span class="ctrl-label">Active:</span>
+                <span class="ctrl-value active" id="ctrl-active">Controller A</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">C8000:</span>
+                <span class="ctrl-value" id="ctrl-c8000">pop-dal.pathsteernetworks.com</span>
+            </div>
+            <div class="btn-row" style="margin-top:6px">
+                <button class="btn" onclick="switchController(0)">CTRL-A</button>
+                <button class="btn" onclick="switchController(1)">CTRL-B</button>
+            </div>
+        </div>
+        
+        <h2>Decision Feed</h2>
+        <div class="feed" id="feed">
+            <div class="feed-item predict">
+                <div class="feed-time">--:--:--.---</div>
+                <div class="feed-msg">Waiting for events...</div>
+            </div>
+        </div>
+        
+        <h2 style="margin-top:10px">Remote Targets</h2>
+        <div class="targets-panel">
+            <div class="target-row">
+                <span>Voice (SIP):</span>
+                <span class="target-status" id="target-voice">--</span>
+            </div>
+            <div class="target-row">
+                <span>LLM:</span>
+                <span class="target-status offline" id="target-llm">Not configured</span>
+            </div>
+        </div>
+        
+        <h2 style="margin-top:10px">Run</h2>
+        <div style="font-size:9px">
+            <div style="color:var(--muted)">ID: <span style="color:var(--blue)" id="run-id">--</span></div>
+            <div style="color:var(--muted)">Dup: <span id="dup-status" style="color:var(--muted)">OFF</span></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// Map init
+const map = L.map('map').setView([32.7767, -96.7970], 13);  // Dallas default
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OSM © CARTO', maxZoom: 19
+}).addTo(map);
+let posMarker = null;
+let trail = [];
+const trailLine = L.polyline([], {color: '#00d4ff', weight: 2, opacity: 0.6}).addTo(map);
+
+// Sparkline data
+const sparkData = {};
+
+function renderUplinks(uplinks) {
+    const container = document.getElementById('uplinks');
+    container.innerHTML = '';
+    
+    uplinks.forEach(u => {
+        if (!u.enabled) return;
+        
+        const typeClass = u.name.startsWith('cell') ? 'lte' : 
+                         u.name.startsWith('sl') ? 'starlink' : 'fiber';
+        const carrierClass = u.cellular?.carrier === 'AT&T' ? 'att' : '';
+        const activeClass = u.active ? 'active' : '';
+        const availClass = u.available ? '' : 'unavailable';
+        
+        // Update sparkline data
+        if (!sparkData[u.name]) sparkData[u.name] = [];
+        sparkData[u.name].push(u.rtt_ms || 0);
+        if (sparkData[u.name].length > 30) sparkData[u.name].shift();
+        
+        let metricsHtml = '';
+        if (u.name.startsWith('cell')) {
+            metricsHtml = `
+                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value ${u.rtt_ms > 100 ? 'warn' : ''}">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
+                <div class="metric"><div class="metric-label">RSRP</div><div class="metric-value ${(u.cellular?.rsrp||0) < -100 ? 'warn' : ''}">${(u.cellular?.rsrp||0).toFixed(0)}</div></div>
+                <div class="metric"><div class="metric-label">SINR</div><div class="metric-value">${(u.cellular?.sinr||0).toFixed(1)}</div></div>
+                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value ${u.loss_pct > 2 ? 'bad' : ''}">${(u.loss_pct||0).toFixed(1)}%</div></div>
+                <div class="metric"><div class="metric-label">Carrier</div><div class="metric-value">${u.cellular?.carrier||'--'}</div></div>
+                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value ${u.risk_now > 0.5 ? 'warn' : ''}">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
+            `;
+        } else if (u.name.startsWith('sl')) {
+            metricsHtml = `
+                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value ${u.rtt_ms > 80 ? 'warn' : ''}">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
+                <div class="metric"><div class="metric-label">State</div><div class="metric-value">${u.starlink?.state?.slice(0,6)||'--'}</div></div>
+                <div class="metric"><div class="metric-label">Obstr</div><div class="metric-value ${u.starlink?.obstructed ? 'bad' : ''}">${u.starlink?.obstructed ? 'YES' : 'NO'}</div></div>
+                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value ${u.loss_pct > 2 ? 'bad' : ''}">${(u.loss_pct||0).toFixed(1)}%</div></div>
+                <div class="metric"><div class="metric-label">ETA</div><div class="metric-value">${u.starlink?.eta > 0 ? u.starlink.eta + 's' : '--'}</div></div>
+                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value ${u.risk_now > 0.5 ? 'warn' : ''}">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
+            `;
+        } else {
+            metricsHtml = `
+                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
+                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value">${(u.loss_pct||0).toFixed(1)}%</div></div>
+                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
+            `;
+        }
+        
+        // Sparkline bars
+        const sparkHtml = sparkData[u.name].map(v => {
+            const h = Math.max(1, Math.min(14, v / 10));
+            const cls = v > 150 ? 'bad' : v > 80 ? 'warn' : '';
+            return `<div class="spark-bar ${cls}" style="height:${h}px"></div>`;
+        }).join('');
+        
+        const card = document.createElement('div');
+        card.className = `uplink-card ${typeClass} ${carrierClass} ${activeClass} ${availClass}`;
+        card.innerHTML = `
+            <div class="uplink-header">
+                <span class="uplink-name">${u.name.toUpperCase()}</span>
+                <span class="uplink-type">${typeClass}</span>
+            </div>
+            <div class="metrics-grid">${metricsHtml}</div>
+            <div class="sparkline">${sparkHtml}</div>
+            <div class="uplink-actions">
+                <button class="btn-fail" onclick="forceFail('${u.name}')">FORCE FAIL</button>
+                <button class="btn-fail" style="border-color:var(--blue);color:var(--blue)" onclick="forceSwitch('${u.name}')">FORCE ACTIVE</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function updateStatus(s) {
+    // Mode badge
+    const modeBadge = document.getElementById('mode-badge');
+    modeBadge.textContent = s.mode || 'OFFLINE';
+    modeBadge.className = 'badge mode-' + (s.mode || 'offline').toLowerCase();
+    
+    // State badge  
+    const stateBadge = document.getElementById('state-badge');
+    stateBadge.textContent = s.state || 'OFFLINE';
+    stateBadge.className = 'badge state-' + (s.state || 'offline').toLowerCase();
+    
+    // Training banner
+    document.getElementById('training-banner').classList.toggle('active', s.mode === 'TRAINING');
+    
+    // Speed
+    document.getElementById('speed-val').textContent = Math.round(s.gps?.speed_mph || 0);
+    
+    // Node ID
+    document.getElementById('node-id').textContent = s.node_id || '--';
+    document.getElementById('run-id').textContent = s.run_id || '--';
+    
+    // Duplication
+    document.getElementById('dup-status').textContent = s.dup_enabled ? 'ON' : 'OFF';
+    document.getElementById('dup-status').style.color = s.dup_enabled ? 'var(--orange)' : 'var(--muted)';
+    
+    // Countdown panel
+    const inProtection = ['PROTECT', 'SWITCHING', 'HOLDING'].includes(s.state);
+    document.getElementById('countdown-panel').classList.toggle('active', inProtection);
+    if (inProtection) {
+        document.getElementById('trigger-reason').textContent = s.trigger || '--';
+        document.getElementById('cd-hold').textContent = s.hold_remaining || 0;
+        document.getElementById('cd-clean').textContent = s.clean_remaining || 0;
+        document.getElementById('cd-switches').textContent = s.switches_this_window || 0;
+    }
+    
+    // Flap banner
+    document.getElementById('flap-banner').classList.toggle('active', s.flap_suppressed);
+    
+    // Risk
+    const riskPct = Math.round((s.global_risk || 0) * 100);
+    document.getElementById('risk-pct').textContent = riskPct + '%';
+    document.getElementById('risk-pct').style.color = riskPct > 60 ? 'var(--red)' : riskPct > 30 ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('risk-fill').style.width = riskPct + '%';
+    
+    const recEl = document.getElementById('risk-rec');
+    recEl.textContent = s.recommendation || 'NORMAL';
+    if (s.recommendation === 'PROTECT') {
+        recEl.style.background = 'rgba(255,102,0,0.2)';
+        recEl.style.color = 'var(--orange)';
+    } else if (s.recommendation === 'PREPARE') {
+        recEl.style.background = 'rgba(255,170,0,0.2)';
+        recEl.style.color = 'var(--yellow)';
+    } else {
+        recEl.style.background = 'rgba(0,255,136,0.2)';
+        recEl.style.color = 'var(--green)';
+    }
+    
+    // GPS
+    if (s.gps?.valid) {
+        document.getElementById('gps-coords').textContent = 
+            s.gps.lat.toFixed(6) + ', ' + s.gps.lon.toFixed(6);
+        document.getElementById('gps-heading').textContent = Math.round(s.gps.heading || 0);
+        document.getElementById('gps-alt').textContent = Math.round(s.gps.alt || 0);
+        
+        const latlng = [s.gps.lat, s.gps.lon];
+        if (posMarker) {
+            posMarker.setLatLng(latlng);
+        } else {
+            posMarker = L.circleMarker(latlng, {
+                radius: 8, fillColor: '#00d4ff', fillOpacity: 1, 
+                color: '#fff', weight: 2
+            }).addTo(map);
+            map.setView(latlng, 15);
+        }
+        
+        // Trail
+        trail.push(latlng);
+        if (trail.length > 500) trail.shift();
+        trailLine.setLatLngs(trail);
+    }
+    
+    // Controller
+    document.getElementById('ctrl-active').textContent = 
+        s.active_controller === 0 ? 'Controller A' : 'Controller B';
+    
+    // Uplinks
+    if (s.uplinks) {
+        renderUplinks(s.uplinks);
+    }
+    
+    // Mode buttons
+    ['training', 'tripwire', 'mirror'].forEach(m => {
+        document.getElementById('btn-' + m).classList.toggle('active', 
+            s.mode?.toLowerCase() === m);
+    });
+}
+
+function addFeedItem(type, msg, reason) {
+    const feed = document.getElementById('feed');
+    const now = new Date();
+    const ts = now.toTimeString().split(' ')[0] + '.' + 
+               String(now.getMilliseconds()).padStart(3, '0');
+    
+    const item = document.createElement('div');
+    item.className = 'feed-item ' + type;
+    item.innerHTML = `
+        <div class="feed-time">${ts}</div>
+        <div class="feed-msg">${msg}${reason ? ' <span class="feed-reason">[' + reason + ']</span>' : ''}</div>
+    `;
+    feed.insertBefore(item, feed.firstChild);
+    if (feed.children.length > 100) feed.removeChild(feed.lastChild);
+}
+
+// API calls
+async function setMode(mode) {
+    await fetch('/api/control/mode', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode})
+    });
+    addFeedItem('mode', 'Mode changed to ' + mode.toUpperCase());
+}
+
+async function forceSwitch(uplink) {
+    await fetch('/api/control/force', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({uplink})
+    });
+    addFeedItem('switch', 'Manual switch to ' + uplink.toUpperCase());
+}
+
+async function forceFail(uplink) {
+    await fetch('/api/control/fail', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({uplink})
+    });
+    addFeedItem('tripwire', 'Force fail on ' + uplink.toUpperCase(), 'manual');
+}
+
+async function triggerProtection() {
+    await fetch('/api/control/trigger', {method: 'POST'});
+    addFeedItem('tripwire', 'Manual protection trigger', 'operator');
+}
+
+async function switchController(ctrl) {
+    await fetch('/api/control/controller', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({controller: ctrl})
+    });
+    addFeedItem('switch', 'Controller switch to ' + (ctrl === 0 ? 'A' : 'B'));
+}
+
+// SSE connection
+let lastState = '';
+const evtSource = new EventSource('/api/stream');
+evtSource.onmessage = (e) => {
+    const status = JSON.parse(e.data);
+    
+    // Detect state changes for feed
+    if (status.state !== lastState && lastState) {
+        if (status.state === 'PROTECT') {
+            addFeedItem('tripwire', 'Protection activated', status.trigger);
+        } else if (status.state === 'NORMAL' && lastState !== 'NORMAL') {
+            addFeedItem('predict', 'Returned to normal operation');
+        }
+    }
+    lastState = status.state;
+    
+    updateStatus(status);
+};
+evtSource.onerror = () => {
+    console.log('SSE reconnecting...');
+};
+
+// Initial load
+fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
+</script>
+</body>
+</html>

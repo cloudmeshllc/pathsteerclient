@@ -1,0 +1,10 @@
+*.o
+pathsteerd
+dedupe
+*.pyc
+__pycache__/
+privatekey
+*.key
+*.db
+*.pcap
+*.jsonl
