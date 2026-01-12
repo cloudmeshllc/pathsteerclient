@@ -288,3 +288,68 @@ def clear_chaos():
     os.system('tc qdisc del dev wwan0 root 2>/dev/null')
     os.system('tc qdisc del dev wwan1 root 2>/dev/null')
     return jsonify({'status': 'all chaos cleared'})
+
+@app.route('/api/mode/control', methods=['POST'])
+def set_control_mode():
+    """Lock to single uplink - no failover (control/baseline)"""
+    data = request.get_json()
+    uplink = data.get('uplink', 'cell_a')
+    
+    # Disable all except selected
+    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
+        config = json.load(f)
+    
+    for u in config.get('uplinks', []):
+        u['enabled'] = (u.get('name') == uplink)
+    
+    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    os.system('systemctl reload pathsteerd 2>/dev/null || true')
+    return jsonify({'mode': 'control', 'locked_to': uplink})
+
+@app.route('/api/mode/control', methods=['POST'])
+def set_control_mode():
+    """Lock to single uplink - no failover (control/baseline)"""
+    data = request.get_json()
+    uplink = data.get('uplink', 'cell_a')
+    
+    # Disable all except selected
+    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
+        config = json.load(f)
+    
+    for u in config.get('uplinks', []):
+        u['enabled'] = (u.get('name') == uplink)
+    
+    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    os.system('systemctl reload pathsteerd 2>/dev/null || true')
+    return jsonify({'mode': 'control', 'locked_to': uplink})
+
+@app.route('/api/pcap/start', methods=['POST'])
+def start_pcap():
+    """Start packet capture"""
+    data = request.get_json()
+    interface = data.get('interface', 'any')
+    duration = data.get('duration', 30)
+    
+    filename = f"/tmp/pathsteer_{int(time.time())}.pcap"
+    # Run tcpdump in background
+    os.system(f'timeout {duration} tcpdump -i {interface} -w {filename} &')
+    return jsonify({'status': 'capturing', 'file': filename, 'duration': duration})
+
+@app.route('/api/pcap/download/<filename>')
+def download_pcap(filename):
+    """Download pcap file"""
+    filepath = f"/tmp/{filename}"
+    if os.path.exists(filepath):
+        return send_file(filepath, as_attachment=True)
+    return jsonify({'error': 'not found'}), 404
+
+@app.route('/api/pcap/list')
+def list_pcaps():
+    """List available pcap files"""
+    import glob
+    files = glob.glob('/tmp/pathsteer_*.pcap')
+    return jsonify({'files': [os.path.basename(f) for f in files]})

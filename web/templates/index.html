@@ -1051,7 +1051,10 @@ function renderUplinks(uplinks) {
         card.innerHTML = `
             <div class="uplink-header">
                 <span class="uplink-name">${u.name.toUpperCase()}</span>
-                <span class="uplink-type">${typeClass}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span class="uplink-type">${typeClass}</span>
+                    <div class="uplink-toggle ${u.enabled !== false ? 'enabled' : ''}" onclick="toggleUplink('${u.name}')" title="Toggle uplink"></div>
+                </div>
             </div>
             <div class="metrics-grid">${metricsHtml}</div>
             <div class="sparkline">${sparkHtml}</div>
