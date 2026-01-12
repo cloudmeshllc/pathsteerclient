@@ -1,148 +1,16 @@
 {
-  "_schema_version": "2.1.0",
-  "_description": "PathSteer Guardian - Edge Configuration",
-  
-  "node": {
-    "id": "edge-protectli-1",
-    "description": "Protectli VP6670 - Demo Unit"
-  },
-
-  "interfaces": {
-    "enp1s0": { "role": "fiber1",     "type": "fiber",    "description": "Fiber Primary" },
-    "enp2s0": { "role": "fiber2",     "type": "fiber",    "description": "Fiber Secondary" },
-    "enp3s0": { "role": "starlink_a", "type": "starlink", "description": "Starlink Mini A" },
-    "enp4s0": { "role": "starlink_b", "type": "starlink", "description": "Starlink Mini B" },
-    "enp5s0": { "role": "backhaul",   "type": "vlan",     "description": "VLAN110 C8000 Backhaul" },
-    "enp6s0": { "role": "management", "type": "mgmt",     "description": "Management Interface" },
-    "wwan0":  { "role": "cellular_a", "type": "lte",      "description": "T-Mobile RM520N" },
-    "wwan1":  { "role": "cellular_b", "type": "lte",      "description": "AT&T RM520N" }
-  },
-
-  "management": {
-    "interface": "enp6s0",
-    "ip": "10.0.1.1/24",
-    "protected": true
-  },
-
-  "backhaul": {
-    "interface": "enp5s0",
-    "ipv4": "104.204.136.49/28",
-    "ipv6": "2602:F644:70:0110::1/64",
-    "description": "VLAN110 - C8000 WireGuard terminus",
-    "managed_separately": true
-  },
-
-  "uplinks": {
-    "fiber1": {
-      "enabled": false,
-      "interface": "enp1s0",
-      "type": "fiber",
-      "description": "Fiber Primary",
-      "ip_mode": "dhcp",
-      "veth_main": "10.201.1.1",
-      "veth_ns": "10.201.1.2"
-    },
-    "fiber2": {
-      "enabled": false,
-      "interface": "enp2s0",
-      "type": "fiber",
-      "description": "Fiber Secondary",
-      "ip_mode": "dhcp",
-      "veth_main": "10.201.2.1",
-      "veth_ns": "10.201.2.2"
-    },
-    "starlink_a": {
-      "enabled": true,
-      "interface": "enp3s0",
-      "type": "starlink",
-      "description": "Starlink Mini A",
-      "ip_mode": "dhcp",
-      "router_ip": "192.168.1.1",
-      "dish_ip": "192.168.100.1",
-      "veth_main": "10.201.3.1",
-      "veth_ns": "10.201.3.2"
-    },
-    "starlink_b": {
-      "enabled": true,
-      "interface": "enp4s0",
-      "type": "starlink",
-      "description": "Starlink Mini B",
-      "ip_mode": "dhcp",
-      "router_ip": "192.168.2.1",
-      "dish_ip": "192.168.100.1",
-      "veth_main": "10.201.4.1",
-      "veth_ns": "10.201.4.2"
-    },
-    "cellular_a": {
-      "enabled": true,
-      "interface": "wwan0",
-      "type": "lte",
-      "description": "T-Mobile RM520N",
-      "ip_mode": "bearer",
-      "imei": "868371055098699",
-      "apn": "fast.t-mobile.com",
-      "carrier": "T-Mobile",
-      "ipv6": false,
-      "veth_main": "10.201.5.1",
-      "veth_ns": "10.201.5.2"
-    },
-    "cellular_b": {
-      "enabled": true,
-      "interface": "wwan1",
-      "type": "lte",
-      "description": "AT&T RM520N",
-      "ip_mode": "bearer",
-      "imei": "868371055076786",
-      "apn": "broadband",
-      "carrier": "AT&T",
-      "ipv6": true,
-      "veth_main": "10.201.6.1",
-      "veth_ns": "10.201.6.2"
-    }
-  },
-
-  "controllers": {
-    "ctrl_a": {
-      "enabled": true,
-      "name": "Dallas POP A",
-      "endpoint": "104.204.136.13",
-      "endpoint_v6": "2602:F644:70::13",
-      "hostname": "pop-dal.pathsteernetworks.com",
-      "pubkey": "ocnNjGlV/bTB+OZLtkzZUYC+1OuMadNAE5K4SRaXnyI=",
-      "wg_port_base": 51820
-    },
-    "ctrl_b": {
-      "enabled": true,
-      "name": "Dallas POP B",
-      "endpoint": "104.204.136.14",
-      "endpoint_v6": "2602:F644:70::14",
-      "hostname": "ctrl-dalb.pathsteerlabs.com",
-      "pubkey": "Wz3m/cfp+4yE8GNklKC+i5WEr61RVTxcd77foCpyrXI=",
-      "wg_port_base": 51830
-    }
-  },
-
-  "wireguard": {
-    "edge_privkey_file": "/etc/wireguard/edge.key",
-    "edge_pubkey": "FbaOGOhHP5vgSPzH2JszteuNtAJfxSsDfuFdAPCatTs=",
-    "mtu": 1380,
-    "keepalive": 15
-  },
-
-  "tunnels": {
-    "_doc": "Each enabled uplink gets 2 tunnels (one per controller)",
-    "naming": "wg-{uplink}-{controller}",
-    "count": "enabled_uplinks x enabled_controllers"
-  },
-
-  "ipv6": {
-    "enabled": true,
-    "prefix": "2602:F644:70::/48",
-    "prefer_v6_endpoints": true
-  },
-
-  "web_ui": {
-    "bind": "0.0.0.0",
-    "port": 8080
-  }
+  "node_id": "edge-protectli-1",
+  "mode": "tripwire",
+  "uplinks": [
+    {"name": "cell_a", "type": "lte", "interface": "wwan0", "enabled": true},
+    {"name": "cell_b", "type": "lte", "interface": "wwan1", "enabled": false},
+    {"name": "sl_a", "type": "starlink", "enabled": true},
+    {"name": "sl_b", "type": "starlink", "enabled": true},
+    {"name": "fa", "type": "fiber", "enabled": true},
+    {"name": "fb", "type": "fiber", "enabled": true}
+  ],
+  "controllers": [
+    {"name": "cA", "host": "104.204.136.13"},
+    {"name": "cB", "host": "104.204.136.14"}
+  ]
 }

@@ -224,3 +224,67 @@ if __name__ == '__main__':
     
     # Run with threading for SSE support
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+
+@app.route('/api/uplink/toggle', methods=['POST'])
+def toggle_uplink():
+    data = request.get_json()
+    name = data.get('name')
+    
+    # Load config
+    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
+        config = json.load(f)
+    
+    # Toggle enabled state
+    for uplink in config.get('uplinks', []):
+        if uplink.get('name') == name:
+            uplink['enabled'] = not uplink.get('enabled', True)
+            new_state = uplink['enabled']
+            break
+    
+    # Save config
+    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    # Signal daemon to reload (optional)
+    os.system('systemctl reload pathsteerd 2>/dev/null || true')
+    
+    return jsonify({'name': name, 'enabled': new_state})
+
+@app.route('/api/chaos/apply', methods=['POST'])
+def apply_chaos():
+    """Apply network impairment via tc"""
+    data = request.get_json()
+    interface = data.get('interface', 'enp1s0')  # fiber interface in ns_fa
+    delay_ms = data.get('delay', 0)
+    jitter_ms = data.get('jitter', 0)
+    loss_pct = data.get('loss', 0)
+    namespace = data.get('namespace', 'ns_fa')
+    
+    # Clear existing
+    os.system(f'ip netns exec {namespace} tc qdisc del dev {interface} root 2>/dev/null')
+    
+    if delay_ms > 0 or jitter_ms > 0 or loss_pct > 0:
+        # Apply netem
+        cmd = f'ip netns exec {namespace} tc qdisc add dev {interface} root netem'
+        if delay_ms > 0:
+            cmd += f' delay {delay_ms}ms'
+            if jitter_ms > 0:
+                cmd += f' {jitter_ms}ms'
+        if loss_pct > 0:
+            cmd += f' loss {loss_pct}%'
+        
+        os.system(cmd)
+        return jsonify({'status': 'chaos applied', 'cmd': cmd})
+    
+    return jsonify({'status': 'chaos cleared'})
+
+@app.route('/api/chaos/clear', methods=['POST'])
+def clear_chaos():
+    """Clear all impairments"""
+    for ns in ['ns_fa', 'ns_fb', 'ns_sl_a', 'ns_sl_b']:
+        os.system(f'ip netns exec {ns} tc qdisc del dev enp1s0 root 2>/dev/null')
+        os.system(f'ip netns exec {ns} tc qdisc del dev enp2s0 root 2>/dev/null')
+    # Main namespace cellular
+    os.system('tc qdisc del dev wwan0 root 2>/dev/null')
+    os.system('tc qdisc del dev wwan1 root 2>/dev/null')
+    return jsonify({'status': 'all chaos cleared'})
