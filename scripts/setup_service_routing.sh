@@ -3,7 +3,7 @@
 # Service IP on internal WiFi
 ip addr add 104.204.136.50/28 dev wlp7s0 2>/dev/null
 
-# WG allowed-ips for main namespace tunnels
+# WG allowed-ips for main namespace tunnels (CRITICAL - must be 0.0.0.0/0)
 wg set wg-ca-cA peer ocnNjGlV/bTB+OZLtkzZUYC+1OuMadNAE5K4SRaXnyI= allowed-ips 0.0.0.0/0
 wg set wg-ca-cB peer Wz3m/cfp+4yE8GNklKC+i5WEr61RVTxcd77foCpyrXI= allowed-ips 0.0.0.0/0
 wg set wg-cb-cA peer ocnNjGlV/bTB+OZLtkzZUYC+1OuMadNAE5K4SRaXnyI= allowed-ips 0.0.0.0/0
@@ -31,7 +31,7 @@ ip netns exec ns_fb sysctl -w net.ipv4.ip_forward=1 2>/dev/null
 ip netns exec ns_sl_a sysctl -w net.ipv4.ip_forward=1 2>/dev/null
 ip netns exec ns_sl_b sysctl -w net.ipv4.ip_forward=1 2>/dev/null
 
-# Routing tables
+# Routing tables for service traffic
 ip route replace default dev wg-ca-cA table tmo_cA 2>/dev/null
 ip route replace default dev wg-ca-cB table tmo_cB 2>/dev/null
 ip route replace default dev wg-cb-cA table att_cA 2>/dev/null
@@ -41,7 +41,7 @@ ip route replace default via 10.201.2.2 dev veth_fb table fb 2>/dev/null
 ip route replace default via 10.201.3.2 dev veth_sl_a table sl_a 2>/dev/null
 ip route replace default via 10.201.4.2 dev veth_sl_b table sl_b 2>/dev/null
 
-# Default to AT&T
+# Default to AT&T (better signal currently)
 ip rule del from 104.204.136.48/28 2>/dev/null
 ip rule add from 104.204.136.48/28 lookup att_cA priority 90
 
