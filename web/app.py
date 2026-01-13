@@ -26,7 +26,7 @@ app = Flask(__name__)
 STATUS_PATH = '/run/pathsteer/status.json'
 COMMAND_PATH = '/run/pathsteer/command'
 CONFIG_PATH = os.environ.get('CONFIG_FILE', '/etc/pathsteer/config.json')
-DB_PATH = '/var/lib/pathsteer/training.db'
+DB_PATH = '/opt/pathsteer/data/training.db'
 
 def get_config():
     """Load configuration"""
@@ -45,6 +45,13 @@ def get_status():
             config = get_config()
             status['node_id'] = config.get('node', {}).get('id', 'unknown')
             status['topology_mode'] = config.get('topology_mode', 'chaos')
+            # Merge GPS data
+            try:
+                with open('/run/pathsteer/gps.json') as gf:
+                    gps_data = json.load(gf)
+                    status['gps'] = {'valid': gps_data.get('fix', False), 'lat': gps_data.get('lat', 0), 'lon': gps_data.get('lon', 0), 'speed_mph': 0, 'heading': 0}
+            except:
+                pass
             return status
     except:
         return {
@@ -170,10 +177,10 @@ def api_heatmap():
         cursor = conn.cursor()
         
         query = '''
-            SELECT latitude, longitude, risk_now, uplink, 
-                   rsrp, sinr, rtt_ms, speed_mps
-            FROM measurements 
-            WHERE latitude IS NOT NULL AND latitude != 0
+            SELECT lat, lon, risk, active_uplink, 
+                   cell_a_rsrp, cell_a_sinr, cell_a_rtt, speed
+            FROM samples 
+            WHERE lat IS NOT NULL AND lat != 0
               AND timestamp > datetime('now', '-' || ? || ' hours')
         '''
         params = [hours]
