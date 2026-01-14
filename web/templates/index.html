@@ -958,7 +958,8 @@ let heatLayer = null;
 async function loadHeatmap() {
     try {
         const resp = await fetch("/api/heatmap?hours=24");
-        const data = await resp.json();
+        let data = await resp.json();
+            data = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink));
         if (data && data.length > 0) {
             const points = data.map(p => [p.lat, p.lng, Math.min(p.rtt/50, 1)]);
             if (heatLayer) map.removeLayer(heatLayer);
@@ -984,7 +985,8 @@ const uplinkColors = {
 async function loadMarkers() {
     try {
         const resp = await fetch("/api/heatmap?hours=24");
-        const data = await resp.json();
+        let data = await resp.json();
+            data = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink));
         if (markerLayer) map.removeLayer(markerLayer);
         const markers = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink)).slice(-200).map(p => {
             const color = uplinkColors[p.uplink] || "#fff";
@@ -1402,7 +1404,8 @@ async function toggleUplink(name) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({name: name})
     });
-    const data = await resp.json();
+    let data = await resp.json();
+            data = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink));
     console.log('Toggled', name, data);
 }
 </script>
