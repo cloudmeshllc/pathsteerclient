@@ -159,6 +159,43 @@ def apply_profile(profile_name):
     STATE["last_profile_change"] = time.time()
 
 
+
+EVENT_DB = "/opt/pathsteer/data/training.db"
+
+def log_radio_event(event_type, old_profile, new_profile, reason=""):
+    """Log radio events with GPS to database"""
+    metrics = STATE["metrics_history"][-1] if STATE["metrics_history"] else {}
+    att = metrics.get("att", {})
+    tmo = metrics.get("tmo", {})
+    
+    # Get GPS
+    lat, lon = 0, 0
+    try:
+        import json
+        gps = json.loads(Path("/run/pathsteer/gps.json").read_text())
+        lat, lon = gps.get("lat", 0), gps.get("lon", 0)
+    except:
+        pass
+    
+    # Calculate duration since last change
+    duration = time.time() - STATE.get("last_profile_change", time.time())
+    
+    try:
+        conn = sqlite3.connect(EVENT_DB)
+        conn.execute("""INSERT INTO radio_events VALUES (
+            datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )""", (
+            lat, lon, event_type, old_profile, new_profile,
+            att.get("band"), att.get("rsrp"), att.get("sinr"),
+            tmo.get("band"), tmo.get("rsrp"), tmo.get("sinr"),
+            reason, duration
+        ))
+        conn.commit()
+        conn.close()
+        log.info(f"Event logged: {event_type} - {reason}")
+    except Exception as e:
+        log.error(f"Event log error: {e}")
+
 def write_hints():
     hints = {}
     profile = CONFIG["profiles"][STATE["current_profile"]]
@@ -254,3 +291,38 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Event logging
+import sqlite3
+EVENT_DB = "/opt/pathsteer/data/training.db"
+LAST_PROFILE_CHANGE = None
+LAST_PROFILE = None
+
+def log_radio_event(event_type, old_profile, new_profile, reason=""):
+    global LAST_PROFILE_CHANGE, LAST_PROFILE
+    now = time.time()
+    duration = 0
+    if LAST_PROFILE_CHANGE:
+        duration = now - LAST_PROFILE_CHANGE
+    
+    metrics = STATE["metrics_history"][-1] if STATE["metrics_history"] else {}
+    att = metrics.get("att", {})
+    tmo = metrics.get("tmo", {})
+    
+    try:
+        conn = sqlite3.connect(EVENT_DB)
+        conn.execute("""INSERT INTO radio_events VALUES (
+            datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )""", (
+            event_type, old_profile, new_profile,
+            att.get("band"), att.get("rsrp"), att.get("sinr"),
+            tmo.get("band"), tmo.get("rsrp"), tmo.get("sinr"),
+            reason, duration
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.error(f"Event log error: {e}")
+    
+    LAST_PROFILE_CHANGE = now
+    LAST_PROFILE = new_profile

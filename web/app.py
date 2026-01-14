@@ -373,3 +373,30 @@ def list_pcaps():
     import glob
     files = glob.glob('/tmp/pathsteer_*.pcap')
     return jsonify({'files': [os.path.basename(f) for f in files]})
+
+@app.route('/api/radio_events')
+def api_radio_events():
+    """Get radio switch events"""
+    hours = request.args.get('hours', 24, type=int)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT timestamp, lat, lon, event_type, old_profile, new_profile,
+                   att_band, att_rsrp, att_sinr, tmo_band, tmo_rsrp, tmo_sinr,
+                   reason, duration_sec
+            FROM radio_events
+            WHERE timestamp > datetime('now', '-' || ? || ' hours')
+            ORDER BY timestamp DESC LIMIT 500
+        ''', [hours])
+        rows = cursor.fetchall()
+        conn.close()
+        return jsonify([{
+            'timestamp': r[0], 'lat': r[1], 'lon': r[2],
+            'event': r[3], 'old': r[4], 'new': r[5],
+            'att_band': r[6], 'att_rsrp': r[7], 'att_sinr': r[8],
+            'tmo_band': r[9], 'tmo_rsrp': r[10], 'tmo_sinr': r[11],
+            'reason': r[12], 'duration': r[13]
+        } for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
