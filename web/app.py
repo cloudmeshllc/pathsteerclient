@@ -178,7 +178,7 @@ def api_heatmap():
         
         query = '''
             SELECT lat, lon, risk, active_uplink, 
-                   cell_a_rsrp, cell_a_sinr, cell_a_rtt, speed
+                   cell_a_rsrp, cell_a_sinr, cell_a_rtt, cell_b_rsrp, cell_b_sinr, cell_b_rtt, speed
             FROM samples 
             WHERE lat IS NOT NULL AND lat != 0
               AND timestamp > datetime('now', '-' || ? || ' hours')
@@ -195,11 +195,24 @@ def api_heatmap():
         rows = cursor.fetchall()
         conn.close()
         
-        return jsonify([{
-            'lat': r[0], 'lng': r[1], 'risk': r[2] or 0,
-            'uplink': r[3], 'rsrp': r[4], 'sinr': r[5],
-            'rtt': r[6], 'speed': r[7]
-        } for r in rows if r[0] and r[1]])
+        results = []
+        for r in rows:
+            if not r[0] or not r[1]:
+                continue
+            uplink = r[3]
+            # cell_a=TMO (index 4,5,6), cell_b=ATT (index 7,8,9)
+            if uplink == 'cell_a':
+                rsrp, sinr, rtt = r[4], r[5], r[6]
+            elif uplink == 'cell_b':
+                rsrp, sinr, rtt = r[7], r[8], r[9]
+            else:
+                rsrp, sinr, rtt = 0, 0, r[6] or r[9] or 0
+            results.append({
+                'lat': r[0], 'lng': r[1], 'risk': r[2] or 0,
+                'uplink': uplink, 'rsrp': rsrp, 'sinr': sinr,
+                'rtt': rtt, 'speed': r[10]
+            })
+        return jsonify(results)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

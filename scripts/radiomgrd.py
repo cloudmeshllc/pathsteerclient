@@ -164,10 +164,15 @@ def write_hints():
     profile = CONFIG["profiles"][STATE["current_profile"]]
     for name, cfg in CONFIG["modems"].items():
         quiet = profile.get(name, {}).get("quiet", False)
+        # Get latest metrics
+        latest = STATE["metrics_history"][-1] if STATE["metrics_history"] else {}
+        modem_metrics = latest.get(name, {})
         hints[name] = {
             "available": cfg["mm_id"] is not None,
             "weight_factor": 0.3 if quiet else 1.0,
-            "net_if": cfg["net_if"]
+            "net_if": cfg["net_if"],
+            "rsrp": modem_metrics.get("rsrp", 0),
+            "sinr": modem_metrics.get("sinr", 0)
         }
     
     Path("/run/pathsteer").mkdir(parents=True, exist_ok=True)
