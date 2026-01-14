@@ -911,8 +911,8 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 // Update stats from status
 function updateStats(s) {
     // Find best/worst RTT
@@ -952,57 +952,6 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 let posMarker = null;
 let trail = [];
 const trailLine = L.polyline([], {color: '#00d4ff', weight: 2, opacity: 0.6}).addTo(map);
-
-// Heatmap layer
-let heatLayer = null;
-async function loadHeatmap() {
-    try {
-        const resp = await fetch("/api/heatmap?hours=24");
-        const data = await resp.json();
-        if (data && data.length > 0) {
-            const points = data.map(p => [p.lat, p.lng, Math.min(p.rtt/50, 1)]);
-            if (heatLayer) map.removeLayer(heatLayer);
-            heatLayer = L.heatLayer(points, {radius:20, blur:15, maxZoom:17}).addTo(map);
-            console.log("Heatmap loaded:", data.length, "points");
-        }
-    } catch(e) { console.log("Heatmap error:", e); }
-}
-setTimeout(loadHeatmap, 2000);
-setInterval(loadHeatmap, 30000);
-
-// Signal markers with popups
-let markerLayer = null;
-const uplinkColors = {
-    "cell_a": "#E20074",  // T-Mobile magenta
-    "cell_b": "#00A8E0",  // AT&T blue
-    "sl_a": "#1DA1F2",    // Starlink
-    "sl_b": "#1DA1F2",
-    "fa": "#00ff88",      // Fiber green
-    "fb": "#00ff88",
-    "fiber2": "#00ff88"
-};
-async function loadMarkers() {
-    try {
-        const resp = await fetch("/api/heatmap?hours=24");
-        const data = await resp.json();
-        if (markerLayer) map.removeLayer(markerLayer);
-        const markers = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink)).slice(-200).map(p => {
-            const color = uplinkColors[p.uplink] || "#fff";
-            return L.circleMarker([p.lat, p.lng], {
-                radius: 5, fillColor: color, color: "#000", 
-                weight: 1, fillOpacity: 0.7
-            }).bindPopup(
-                "<b>" + p.uplink + "</b><br>" +
-                "RTT: " + (p.rtt||0).toFixed(1) + "ms<br>" +
-                "RSRP: " + (p.rsrp||0) + "<br>" +
-                "SINR: " + (p.sinr||0)
-            );
-        });
-        markerLayer = L.layerGroup(markers).addTo(map);
-    } catch(e) { console.log("Marker error:", e); }
-}
-setTimeout(loadMarkers, 3000);
-setInterval(loadMarkers, 30000);
 
 // Sparkline data
 const sparkData = {};
@@ -1404,6 +1353,29 @@ async function toggleUplink(name) {
     });
     const data = await resp.json();
     console.log('Toggled', name, data);
+// Heatmap layer
+let heatLayer = null;
+
+async function loadHeatmap() {
+    try {
+        const resp = await fetch("/api/heatmap?hours=24");
+        const data = await resp.json();
+        if (data.length > 0) {
+            const points = data.map(p => [p.lat, p.lng, p.rtt / 100]);
+            if (heatLayer) map.removeLayer(heatLayer);
+            heatLayer = L.heatLayer(points, {
+                radius: 20,
+                blur: 15,
+                maxZoom: 17,
+                gradient: {0.2: "blue", 0.4: "lime", 0.6: "yellow", 0.8: "orange", 1: "red"}
+            }).addTo(map);
+        }
+    } catch(e) { console.log("Heatmap error:", e); }
+}
+
+// Load heatmap on start and every 30 seconds
+loadHeatmap();
+setInterval(loadHeatmap, 30000);
 }
 </script>
 </body>
