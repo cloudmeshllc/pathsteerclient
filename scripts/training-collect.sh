@@ -6,6 +6,8 @@ LAST_LAT=0
 LAST_LON=0
 LAST_RSRP=0
 LAST_SAMPLE=0
+IDLE_START=0
+IDLE_LOGGED=0
 
 sqlite3 $DB "CREATE TABLE IF NOT EXISTS samples (
     timestamp TEXT, lat REAL, lon REAL, speed REAL, heading REAL,
@@ -26,18 +28,43 @@ while true; do
         LON=$(echo $GPS | jq -r '.lon // 0')
         CA_RSRP=$(echo $RADIO | jq -r '.tmo.rsrp // 0')
         
-        # Distance moved
+        # Distance moved (~500ft = 0.00137 degrees)
         DLAT=$(echo "$LAT - $LAST_LAT" | bc -l 2>/dev/null || echo "1")
         DLON=$(echo "$LON - $LAST_LON" | bc -l 2>/dev/null || echo "1")
-        MOVED=$(echo "scale=6; sqrt($DLAT*$DLAT + $DLON*$DLON) > 0.0001" | bc -l 2>/dev/null || echo "0")
+        DIST=$(echo "scale=6; sqrt($DLAT*$DLAT + $DLON*$DLON)" | bc -l 2>/dev/null || echo "1")
+        MOVED=$(echo "$DIST > 0.0001" | bc -l 2>/dev/null || echo "0")  # ~30ft threshold for "moving"
+        
+        # Track idle state
+        if [ "$MOVED" = "0" ]; then
+            # Still idle
+            if [ "$IDLE_START" = "0" ]; then
+                IDLE_START=$NOW
+            fi
+            IDLE_DURATION=$((NOW - IDLE_START))
+            
+            # If idle >2 min and already logged, skip for 24h
+            if [ "$IDLE_DURATION" -gt 120 ] && [ "$IDLE_LOGGED" = "1" ]; then
+                # Check if 24h passed since last sample at this location
+                HOURS_SINCE=$((NOW - LAST_SAMPLE))
+                if [ "$HOURS_SINCE" -lt 86400 ]; then
+                    sleep 5
+                    continue
+                fi
+            fi
+        else
+            # Moving - reset idle tracking
+            IDLE_START=0
+            IDLE_LOGGED=0
+        fi
+        
+        # RSRP change check
+        RSRP_DIFF=$(echo "scale=0; ($CA_RSRP - $LAST_RSRP)" | bc -l 2>/dev/null || echo "0")
+        RSRP_CHANGED=$([ ${RSRP_DIFF#-} -gt 5 ] && echo "1" || echo "0")
         
         # Time since last sample
         ELAPSED=$((NOW - LAST_SAMPLE))
         
-        # Sample if: moved OR signal changed >5dB OR 30sec passed
-        RSRP_DIFF=$(echo "scale=0; ($CA_RSRP - $LAST_RSRP)" | bc -l 2>/dev/null || echo "0")
-        RSRP_CHANGED=$([ ${RSRP_DIFF#-} -gt 5 ] && echo "1" || echo "0")
-        
+        # Sample if: moved significantly OR signal changed >5dB OR 30sec passed (while active)
         if [ "$MOVED" = "1" ] || [ "$RSRP_CHANGED" = "1" ] || [ "$ELAPSED" -gt 30 ]; then
             TS=$(date -Iseconds)
             CA_RTT=$(echo $STATUS | jq -r '.uplinks[] | select(.name=="cell_a") | .rtt_ms // 0')
@@ -61,6 +88,11 @@ while true; do
             LAST_LON=$LON
             LAST_RSRP=$CA_RSRP
             LAST_SAMPLE=$NOW
+            
+            # Mark as logged if idle
+            if [ "$IDLE_START" != "0" ]; then
+                IDLE_LOGGED=1
+            fi
         fi
     fi
     sleep 5
