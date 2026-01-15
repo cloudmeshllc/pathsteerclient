@@ -1078,7 +1078,7 @@ function renderUplinks(uplinks) {
             metricsHtml = `
                 <div class="metric"><div class="metric-label">RTT</div><div class="metric-value ${u.rtt_ms > 80 ? 'warn' : ''}">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
                 <div class="metric"><div class="metric-label">State</div><div class="metric-value">${u.starlink?.state?.slice(0,6)||'--'}</div></div>
-                <div class="metric"><div class="metric-label">Obstr<span class="obstr-indicator ${u.starlink?.obstructed ? 'obstructed' : 'clear'}"></span></div><div class="metric-value ${u.starlink?.obstructed ? 'bad' : ''}">${u.starlink?.obstructed ? 'YES' : 'NO'}</div></div>
+                <div class="metric"><div class="metric-label">OBSTR<span class="obstr-indicator ${u.starlink?.obstruction_pct > 5 ? 'obstructed' : 'clear'}"></span></div><div class="metric-value ${u.starlink?.obstructed ? 'bad' : ''}">${(u.starlink?.obstruction_pct || 0).toFixed(1)}%</div></div>
                 <div class="metric"><div class="metric-label">Loss</div><div class="metric-value ${u.loss_pct > 2 ? 'bad' : ''}">${(u.loss_pct||0).toFixed(1)}%</div></div>
                 <div class="metric"><div class="metric-label">ETA</div><div class="metric-value">${u.starlink?.eta > 0 ? u.starlink.eta + 's' : '--'}</div></div>
                 <div class="metric"><div class="metric-label">Risk</div><div class="metric-value ${u.risk_now > 0.5 ? 'warn' : ''}">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
