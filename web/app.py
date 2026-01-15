@@ -400,3 +400,20 @@ def api_radio_events():
         } for r in rows])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/radio/mitigation', methods=['GET', 'POST'])
+def api_radio_mitigation():
+    """Toggle radio desense mitigation on/off"""
+    state_file = "/run/pathsteer/radio_mitigation.json"
+    if request.method == 'POST':
+        data = request.get_json()
+        enabled = data.get('enabled', True)
+        Path("/run/pathsteer").mkdir(parents=True, exist_ok=True)
+        Path(state_file).write_text(json.dumps({"enabled": enabled}))
+        return jsonify({"mitigation_enabled": enabled})
+    else:
+        try:
+            state = json.loads(Path(state_file).read_text())
+            return jsonify({"mitigation_enabled": state.get("enabled", True)})
+        except:
+            return jsonify({"mitigation_enabled": True})

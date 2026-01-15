@@ -48,6 +48,7 @@ CONFIG = {
 
 STATE = {
     "current_profile": "dual_active",
+    "mitigation_enabled": True,
     "last_profile_change": 0,
     "metrics_history": []
 }
@@ -240,6 +241,16 @@ def detect_desense():
 
 
 def evaluate():
+    # Check if mitigation is disabled
+    try:
+        import json
+        state = json.loads(Path("/run/pathsteer/radio_mitigation.json").read_text())
+        if not state.get("enabled", True):
+            return "dual_active"
+    except:
+        pass
+    if not STATE.get("mitigation_enabled", True):
+        return "dual_active"
     if not STATE["metrics_history"]:
         return "dual_active"
     
