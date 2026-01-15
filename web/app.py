@@ -238,6 +238,31 @@ def api_risk_zones():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/uplink/toggle', methods=['POST'])
+def toggle_uplink():
+    """Toggle uplink enabled state"""
+    data = request.get_json()
+    name = data.get('name')
+    config_path = '/etc/pathsteer/config.json'
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        new_state = False
+        if name in config.get('uplinks', {}):
+            current = config['uplinks'][name].get('enabled', True)
+            config['uplinks'][name]['enabled'] = not current
+            new_state = config['uplinks'][name]['enabled']
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            # Write command for daemon
+            cmd = 'enable:' + name if new_state else 'disable:' + name
+            with open('/run/pathsteer/command', 'w') as cf:
+                cf.write(cmd)
+        return jsonify({'name': name, 'enabled': new_state})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Ensure directories exist
     os.makedirs('/run/pathsteer', exist_ok=True)
@@ -245,175 +270,3 @@ if __name__ == '__main__':
     # Run with threading for SSE support
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
 
-@app.route('/api/uplink/toggle', methods=['POST'])
-def toggle_uplink():
-    data = request.get_json()
-    name = data.get('name')
-    
-    # Load config
-    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
-        config = json.load(f)
-    
-    # Toggle enabled state
-    for uplink in config.get('uplinks', []):
-        if uplink.get('name') == name:
-            uplink['enabled'] = not uplink.get('enabled', True)
-            new_state = uplink['enabled']
-            break
-    
-    # Save config
-    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
-        json.dump(config, f, indent=2)
-    
-    # Signal daemon to reload (optional)
-    os.system('systemctl reload pathsteerd 2>/dev/null || true')
-    
-    return jsonify({'name': name, 'enabled': new_state})
-
-@app.route('/api/chaos/apply', methods=['POST'])
-def apply_chaos():
-    """Apply network impairment via tc"""
-    data = request.get_json()
-    interface = data.get('interface', 'enp1s0')  # fiber interface in ns_fa
-    delay_ms = data.get('delay', 0)
-    jitter_ms = data.get('jitter', 0)
-    loss_pct = data.get('loss', 0)
-    namespace = data.get('namespace', 'ns_fa')
-    
-    # Clear existing
-    os.system(f'ip netns exec {namespace} tc qdisc del dev {interface} root 2>/dev/null')
-    
-    if delay_ms > 0 or jitter_ms > 0 or loss_pct > 0:
-        # Apply netem
-        cmd = f'ip netns exec {namespace} tc qdisc add dev {interface} root netem'
-        if delay_ms > 0:
-            cmd += f' delay {delay_ms}ms'
-            if jitter_ms > 0:
-                cmd += f' {jitter_ms}ms'
-        if loss_pct > 0:
-            cmd += f' loss {loss_pct}%'
-        
-        os.system(cmd)
-        return jsonify({'status': 'chaos applied', 'cmd': cmd})
-    
-    return jsonify({'status': 'chaos cleared'})
-
-@app.route('/api/chaos/clear', methods=['POST'])
-def clear_chaos():
-    """Clear all impairments"""
-    for ns in ['ns_fa', 'ns_fb', 'ns_sl_a', 'ns_sl_b']:
-        os.system(f'ip netns exec {ns} tc qdisc del dev enp1s0 root 2>/dev/null')
-        os.system(f'ip netns exec {ns} tc qdisc del dev enp2s0 root 2>/dev/null')
-    # Main namespace cellular
-    os.system('tc qdisc del dev wwan0 root 2>/dev/null')
-    os.system('tc qdisc del dev wwan1 root 2>/dev/null')
-    return jsonify({'status': 'all chaos cleared'})
-
-@app.route('/api/mode/control', methods=['POST'])
-def set_control_mode():
-    """Lock to single uplink - no failover (control/baseline)"""
-    data = request.get_json()
-    uplink = data.get('uplink', 'cell_a')
-    
-    # Disable all except selected
-    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
-        config = json.load(f)
-    
-    for u in config.get('uplinks', []):
-        u['enabled'] = (u.get('name') == uplink)
-    
-    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
-        json.dump(config, f, indent=2)
-    
-    os.system('systemctl reload pathsteerd 2>/dev/null || true')
-    return jsonify({'mode': 'control', 'locked_to': uplink})
-
-@app.route('/api/mode/control', methods=['POST'])
-def set_control_mode():
-    """Lock to single uplink - no failover (control/baseline)"""
-    data = request.get_json()
-    uplink = data.get('uplink', 'cell_a')
-    
-    # Disable all except selected
-    with open('/opt/pathsteer/config/config.edge.json', 'r') as f:
-        config = json.load(f)
-    
-    for u in config.get('uplinks', []):
-        u['enabled'] = (u.get('name') == uplink)
-    
-    with open('/opt/pathsteer/config/config.edge.json', 'w') as f:
-        json.dump(config, f, indent=2)
-    
-    os.system('systemctl reload pathsteerd 2>/dev/null || true')
-    return jsonify({'mode': 'control', 'locked_to': uplink})
-
-@app.route('/api/pcap/start', methods=['POST'])
-def start_pcap():
-    """Start packet capture"""
-    data = request.get_json()
-    interface = data.get('interface', 'any')
-    duration = data.get('duration', 30)
-    
-    filename = f"/tmp/pathsteer_{int(time.time())}.pcap"
-    # Run tcpdump in background
-    os.system(f'timeout {duration} tcpdump -i {interface} -w {filename} &')
-    return jsonify({'status': 'capturing', 'file': filename, 'duration': duration})
-
-@app.route('/api/pcap/download/<filename>')
-def download_pcap(filename):
-    """Download pcap file"""
-    filepath = f"/tmp/{filename}"
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
-    return jsonify({'error': 'not found'}), 404
-
-@app.route('/api/pcap/list')
-def list_pcaps():
-    """List available pcap files"""
-    import glob
-    files = glob.glob('/tmp/pathsteer_*.pcap')
-    return jsonify({'files': [os.path.basename(f) for f in files]})
-
-@app.route('/api/radio_events')
-def api_radio_events():
-    """Get radio switch events"""
-    hours = request.args.get('hours', 24, type=int)
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT timestamp, lat, lon, event_type, old_profile, new_profile,
-                   att_band, att_rsrp, att_sinr, tmo_band, tmo_rsrp, tmo_sinr,
-                   reason, duration_sec
-            FROM radio_events
-            WHERE timestamp > datetime('now', '-' || ? || ' hours')
-            ORDER BY timestamp DESC LIMIT 500
-        ''', [hours])
-        rows = cursor.fetchall()
-        conn.close()
-        return jsonify([{
-            'timestamp': r[0], 'lat': r[1], 'lon': r[2],
-            'event': r[3], 'old': r[4], 'new': r[5],
-            'att_band': r[6], 'att_rsrp': r[7], 'att_sinr': r[8],
-            'tmo_band': r[9], 'tmo_rsrp': r[10], 'tmo_sinr': r[11],
-            'reason': r[12], 'duration': r[13]
-        } for r in rows])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/radio/mitigation', methods=['GET', 'POST'])
-def api_radio_mitigation():
-    """Toggle radio desense mitigation on/off"""
-    state_file = "/run/pathsteer/radio_mitigation.json"
-    if request.method == 'POST':
-        data = request.get_json()
-        enabled = data.get('enabled', True)
-        Path("/run/pathsteer").mkdir(parents=True, exist_ok=True)
-        Path(state_file).write_text(json.dumps({"enabled": enabled}))
-        return jsonify({"mitigation_enabled": enabled})
-    else:
-        try:
-            state = json.loads(Path(state_file).read_text())
-            return jsonify({"mitigation_enabled": state.get("enabled", True)})
-        except:
-            return jsonify({"mitigation_enabled": True})
