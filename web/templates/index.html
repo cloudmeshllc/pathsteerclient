@@ -1253,6 +1253,7 @@ async function forceSwitch(uplink) {
 }
 
 async function forceFail(uplink) {
+    console.log("forceFail called:", uplink);
     await fetch('/api/control/fail', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
