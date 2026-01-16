@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathSteer Chaos Control Panel</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background: #0a0e14; 
+            color: #e0e0e0; 
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+        }
+        h1 { color: #ff6b35; margin-bottom: 20px; }
+        h2 { color: #4ecdc4; margin: 20px 0 10px; font-size: 1.1em; }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        
+        .panel {
+            background: #141a22;
+            border: 1px solid #2a3a4a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .panel.scenarios { border-color: #ff6b35; }
+        .panel.uplinks { border-color: #4ecdc4; }
+        .panel.stats { border-color: #f7dc6f; }
+        .panel.pcap { border-color: #bb86fc; }
+        
+        /* Sliders */
+        .slider-group { margin: 15px 0; }
+        .slider-label { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+        .slider-value { color: #ff6b35; font-weight: bold; }
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #2a3a4a;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #4ecdc4;
+            cursor: pointer;
+        }
+        input[type="range"].rtt::-webkit-slider-thumb { background: #ff6b35; }
+        input[type="range"].jitter::-webkit-slider-thumb { background: #f7dc6f; }
+        input[type="range"].loss::-webkit-slider-thumb { background: #e74c3c; }
+        
+        /* Buttons */
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.95em;
+            transition: all 0.2s;
+            margin: 5px;
+            width: calc(50% - 10px);
+        }
+        .btn:hover { transform: scale(1.02); }
+        .btn-scenario { background: linear-gradient(135deg, #ff6b35, #f39c12); color: #000; }
+        .btn-danger { background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; }
+        .btn-success { background: linear-gradient(135deg, #27ae60, #2ecc71); color: #fff; }
+        .btn-info { background: linear-gradient(135deg, #3498db, #2980b9); color: #fff; }
+        .btn-purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); color: #fff; }
+        .btn-reset { background: #2a3a4a; color: #e0e0e0; }
+        .btn-full { width: calc(100% - 10px); }
+        
+        /* Stats */
+        .stat-row { 
+            display: flex; 
+            justify-content: space-between; 
+            padding: 10px 0;
+            border-bottom: 1px solid #2a3a4a;
+        }
+        .stat-value { font-size: 1.5em; font-weight: bold; }
+        .stat-value.green { color: #2ecc71; }
+        .stat-value.orange { color: #f39c12; }
+        .stat-value.red { color: #e74c3c; }
+        
+        /* Uplink cards */
+        .uplink-card {
+            background: #1a2430;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .uplink-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .uplink-name { font-weight: bold; color: #4ecdc4; }
+        .uplink-status { 
+            padding: 3px 8px; 
+            border-radius: 4px; 
+            font-size: 0.8em;
+        }
+        .uplink-status.active { background: #27ae60; }
+        .uplink-status.standby { background: #2a3a4a; }
+        .uplink-status.failed { background: #e74c3c; }
+        
+        /* Event log */
+        .event-log {
+            background: #0a0e14;
+            border: 1px solid #2a3a4a;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        .event { padding: 3px 0; border-bottom: 1px solid #1a2430; }
+        .event.switch { color: #4ecdc4; }
+        .event.fail { color: #e74c3c; }
+        .event.chaos { color: #f39c12; }
+        
+        /* PCAP */
+        .pcap-status { 
+            padding: 15px; 
+            background: #1a2430; 
+            border-radius: 6px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .pcap-status.recording { 
+            background: #e74c3c; 
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        /* Header bar */
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .back-link { color: #4ecdc4; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-bar">
+            <h1>🎛️ CHAOS CONTROL PANEL</h1>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+        
+        <div class="grid">
+            <!-- Scenario Buttons -->
+            <div class="panel scenarios">
+                <h2>⚡ CHAOS SCENARIOS</h2>
+                <button class="btn btn-scenario" onclick="scenario('bridge')">🌉 Drive Under Bridge</button>
+                <button class="btn btn-scenario" onclick="scenario('deadzone')">📵 Enter Dead Zone</button>
+                <button class="btn btn-danger" onclick="scenario('storm')">🌪️ Network Storm</button>
+                <button class="btn btn-danger" onclick="scenario('fibercut')">✂️ Fiber Cut</button>
+                <button class="btn btn-info" onclick="scenario('sat_handoff')">🛰️ Satellite Handoff</button>
+                <button class="btn btn-purple" onclick="scenario('congestion')">🚗 Rush Hour</button>
+                <button class="btn btn-reset btn-full" onclick="scenario('reset')">🔄 RESET ALL CHAOS</button>
+            </div>
+            
+            <!-- Session Stats -->
+            <div class="panel stats">
+                <h2>📊 SESSION STATS</h2>
+                <div class="stat-row">
+                    <span>Total Failovers</span>
+                    <span class="stat-value green" id="stat-failovers">0</span>
+                </div>
+                <div class="stat-row">
+                    <span>Dropped Packets</span>
+                    <span class="stat-value green" id="stat-dropped">0</span>
+                </div>
+                <div class="stat-row">
+                    <span>Session Continuity</span>
+                    <span class="stat-value green" id="stat-continuity">100%</span>
+                </div>
+                <div class="stat-row">
+                    <span>Avg Switch Time</span>
+                    <span class="stat-value orange" id="stat-switchtime">--</span>
+                </div>
+                <div class="stat-row">
+                    <span>Active Path</span>
+                    <span class="stat-value" id="stat-active">--</span>
+                </div>
+                <button class="btn btn-reset btn-full" onclick="resetStats()">Reset Stats</button>
+            </div>
+            
+            <!-- PCAP Control -->
+            <div class="panel pcap">
+                <h2>📦 PACKET CAPTURE</h2>
+                <div class="pcap-status" id="pcap-status">
+                    Ready to capture
+                </div>
+                <button class="btn btn-danger btn-full" id="pcap-btn" onclick="togglePcap()">
+                    ⏺️ START CAPTURE
+                </button>
+                <div style="margin-top: 10px;">
+                    <label style="font-size: 0.9em;">Capture duration:</label>
+                    <select id="pcap-duration" style="background: #2a3a4a; color: #fff; padding: 5px; border: none; border-radius: 4px;">
+                        <option value="30">30 seconds</option>
+                        <option value="60" selected>1 minute</option>
+                        <option value="300">5 minutes</option>
+                        <option value="0">Until stopped</option>
+                    </select>
+                </div>
+                <div id="pcap-downloads" style="margin-top: 15px;"></div>
+            </div>
+        </div>
+        
+        <!-- Per-Uplink Chaos -->
+        <div class="panel uplinks" style="margin-top: 20px;">
+            <h2>🎚️ PER-UPLINK CHAOS INJECTION</h2>
+            <div class="grid" id="uplink-sliders">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+        
+        <!-- Event Log -->
+        <div class="panel" style="margin-top: 20px;">
+            <h2>📜 CHAOS EVENT LOG</h2>
+            <div class="event-log" id="event-log">
+                <div class="event">Chaos Panel initialized...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        /* ===========================================
+         * CHAOS CONTROL PANEL - Client-side JS
+         * =========================================== */
+        
+        const UPLINKS = ['cell_a', 'cell_b', 'sl_a', 'sl_b', 'fa', 'fb'];
+        let pcapRecording = false;
+        let chaosState = {};  // Track injected chaos per uplink
+        let stats = { failovers: 0, dropped: 0, switches: [] };
+        
+        /* Initialize uplink sliders */
+        function initSliders() {
+            const container = document.getElementById('uplink-sliders');
+            UPLINKS.forEach(name => {
+                chaosState[name] = { rtt: 0, jitter: 0, loss: 0 };
+                container.innerHTML += `
+                    <div class="uplink-card">
+                        <div class="uplink-header">
+                            <span class="uplink-name">${name.toUpperCase()}</span>
+                            <span class="uplink-status standby" id="status-${name}">STANDBY</span>
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Inject RTT</span>
+                                <span class="slider-value" id="rtt-val-${name}">0ms</span>
+                            </div>
+                            <input type="range" class="rtt" min="0" max="500" value="0" 
+                                   oninput="updateChaos('${name}', 'rtt', this.value)">
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Inject Jitter</span>
+                                <span class="slider-value" id="jitter-val-${name}">0ms</span>
+                            </div>
+                            <input type="range" class="jitter" min="0" max="100" value="0"
+                                   oninput="updateChaos('${name}', 'jitter', this.value)">
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Inject Packet Loss</span>
+                                <span class="slider-value" id="loss-val-${name}">0%</span>
+                            </div>
+                            <input type="range" class="loss" min="0" max="50" value="0"
+                                   oninput="updateChaos('${name}', 'loss', this.value)">
+                        </div>
+                        <button class="btn btn-danger" style="width:48%" onclick="forceFailUplink('${name}')">FORCE FAIL</button>
+                        <button class="btn btn-success" style="width:48%" onclick="forceActiveUplink('${name}')">FORCE ACTIVE</button>
+                    </div>
+                `;
+            });
+        }
+        
+        /* Update chaos values and send to backend */
+        async function updateChaos(uplink, type, value) {
+            chaosState[uplink][type] = parseInt(value);
+            const suffix = type === 'loss' ? '%' : 'ms';
+            document.getElementById(`${type}-val-${uplink}`).textContent = value + suffix;
+            
+            // Send to backend
+            await fetch('/api/chaos/inject', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ uplink, ...chaosState[uplink] })
+            });
+            
+            logEvent('chaos', `${uplink}: RTT+${chaosState[uplink].rtt}ms, Jitter+${chaosState[uplink].jitter}ms, Loss ${chaosState[uplink].loss}%`);
+        }
+        
+        /* Scenario presets */
+        async function scenario(name) {
+            const scenarios = {
+                'bridge': { sl_a: {rtt:0, jitter:0, loss:100}, sl_b: {rtt:0, jitter:0, loss:100} },  // Kill Starlinks
+                'deadzone': { cell_a: {rtt:200, jitter:50, loss:30}, cell_b: {rtt:250, jitter:60, loss:40} },  // Degrade cellular
+                'storm': { cell_a: {rtt:100, jitter:80, loss:20}, cell_b: {rtt:150, jitter:90, loss:25}, sl_a: {rtt:80, jitter:40, loss:15}, sl_b: {rtt:90, jitter:50, loss:20} },
+                'fibercut': { fa: {rtt:0, jitter:0, loss:100}, fb: {rtt:0, jitter:0, loss:100} },
+                'sat_handoff': { sl_a: {rtt:150, jitter:100, loss:10}, sl_b: {rtt:50, jitter:20, loss:0} },
+                'congestion': { cell_a: {rtt:300, jitter:100, loss:5}, cell_b: {rtt:350, jitter:120, loss:8} },
+                'reset': {}
+            };
+            
+            if (name === 'reset') {
+                // Reset all
+                UPLINKS.forEach(u => {
+                    chaosState[u] = {rtt:0, jitter:0, loss:0};
+                    document.querySelectorAll(`input[type="range"]`).forEach(s => s.value = 0);
+                    document.querySelectorAll(`.slider-value`).forEach(s => s.textContent = '0ms');
+                });
+                await fetch('/api/chaos/reset', { method: 'POST' });
+                logEvent('chaos', '🔄 All chaos reset');
+            } else {
+                const preset = scenarios[name];
+                for (const [uplink, values] of Object.entries(preset)) {
+                    chaosState[uplink] = values;
+                    await fetch('/api/chaos/inject', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ uplink, ...values })
+                    });
+                }
+                logEvent('chaos', `⚡ Scenario: ${name.toUpperCase()}`);
+            }
+        }
+        
+        /* Force fail/active */
+        async function forceFailUplink(uplink) {
+            await fetch('/api/control/fail', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ uplink })
+            });
+            logEvent('fail', `Force fail: ${uplink.toUpperCase()}`);
+        }
+        
+        async function forceActiveUplink(uplink) {
+            await fetch('/api/control/force', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ uplink })
+            });
+            logEvent('switch', `Force active: ${uplink.toUpperCase()}`);
+        }
+        
+        /* PCAP control */
+        async function togglePcap() {
+            const btn = document.getElementById('pcap-btn');
+            const status = document.getElementById('pcap-status');
+            const duration = document.getElementById('pcap-duration').value;
+            
+            if (!pcapRecording) {
+                pcapRecording = true;
+                btn.innerHTML = '⏹️ STOP CAPTURE';
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-success');
+                status.textContent = '🔴 RECORDING...';
+                status.classList.add('recording');
+                
+                await fetch('/api/pcap/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ duration: parseInt(duration) })
+                });
+                logEvent('chaos', '📦 PCAP capture started');
+                
+                if (duration > 0) {
+                    setTimeout(() => stopPcap(), duration * 1000);
+                }
+            } else {
+                stopPcap();
+            }
+        }
+        
+        async function stopPcap() {
+            pcapRecording = false;
+            const btn = document.getElementById('pcap-btn');
+            const status = document.getElementById('pcap-status');
+            
+            btn.innerHTML = '⏺️ START CAPTURE';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-danger');
+            status.textContent = 'Processing...';
+            status.classList.remove('recording');
+            
+            const resp = await fetch('/api/pcap/stop', { method: 'POST' });
+            const data = await resp.json();
+            
+            status.textContent = 'Ready to capture';
+            if (data.file) {
+                const downloads = document.getElementById('pcap-downloads');
+                downloads.innerHTML = `<a href="/api/pcap/download/${data.file}" class="btn btn-info btn-full">📥 Download ${data.file}</a>` + downloads.innerHTML;
+                logEvent('chaos', `📦 PCAP saved: ${data.file}`);
+            }
+        }
+        
+        /* Event logging */
+        function logEvent(type, message) {
+            const log = document.getElementById('event-log');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML = `<div class="event ${type}">[${time}] ${message}</div>` + log.innerHTML;
+        }
+        
+        /* Update stats from status.json */
+        async function updateStats() {
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
+                
+                document.getElementById('stat-active').textContent = data.active_uplink?.toUpperCase() || '--';
+                document.getElementById('stat-failovers').textContent = stats.failovers;
+                document.getElementById('stat-dropped').textContent = stats.dropped;
+                
+                // Update uplink statuses
+                (data.uplinks || []).forEach(u => {
+                    const el = document.getElementById(`status-${u.name}`);
+                    if (el) {
+                        el.className = 'uplink-status ' + (u.active ? 'active' : u.available ? 'standby' : 'failed');
+                        el.textContent = u.active ? 'ACTIVE' : u.available ? 'STANDBY' : 'FAILED';
+                    }
+                });
+            } catch (e) {}
+        }
+        
+        function resetStats() {
+            stats = { failovers: 0, dropped: 0, switches: [] };
+            updateStats();
+            logEvent('chaos', '📊 Stats reset');
+        }
+        
+        /* Event source for real-time updates */
+        function connectSSE() {
+            const es = new EventSource('/api/events');
+            es.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'switch') {
+                    stats.failovers++;
+                    logEvent('switch', `Switch: ${data.from} → ${data.to}`);
+                } else if (data.type === 'tripwire') {
+                    logEvent('fail', `Tripwire: ${data.trigger}`);
+                }
+                updateStats();
+            };
+        }
+        
+        /* Init */
+        initSliders();
+        updateStats();
+        setInterval(updateStats, 1000);
+        connectSSE();
+    </script>
+</body>
+</html>

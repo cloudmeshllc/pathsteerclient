@@ -279,3 +279,93 @@ if __name__ == '__main__':
     # Run with threading for SSE support
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
 
+
+# =============================================================================
+# CHAOS CONTROL PANEL ROUTES
+# =============================================================================
+
+# Store chaos injection state
+chaos_state = {}
+pcap_process = None
+pcap_file = None
+
+@app.route('/demo')
+def chaos_panel():
+    """Chaos Control Panel for demos"""
+    return render_template('chaos.html')
+
+@app.route('/api/chaos/inject', methods=['POST'])
+def api_chaos_inject():
+    """Inject chaos (RTT/jitter/loss) into an uplink"""
+    global chaos_state
+    data = request.get_json()
+    uplink = data.get('uplink')
+    rtt = data.get('rtt', 0)
+    jitter = data.get('jitter', 0)
+    loss = data.get('loss', 0)
+    
+    chaos_state[uplink] = {'rtt': rtt, 'jitter': jitter, 'loss': loss}
+    
+    # Write to file for daemon to read
+    chaos_file = '/run/pathsteer/chaos.json'
+    with open(chaos_file, 'w') as f:
+        json.dump(chaos_state, f)
+    
+    return jsonify({'status': 'ok', 'uplink': uplink, 'chaos': chaos_state[uplink]})
+
+@app.route('/api/chaos/reset', methods=['POST'])
+def api_chaos_reset():
+    """Reset all chaos injection"""
+    global chaos_state
+    chaos_state = {}
+    chaos_file = '/run/pathsteer/chaos.json'
+    with open(chaos_file, 'w') as f:
+        json.dump({}, f)
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/pcap/start', methods=['POST'])
+def api_pcap_start():
+    """Start packet capture"""
+    global pcap_process, pcap_file
+    import subprocess
+    from datetime import datetime
+    
+    data = request.get_json()
+    duration = data.get('duration', 60)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    pcap_file = f'chaos_{timestamp}.pcap'
+    pcap_path = f'/opt/pathsteer/data/pcaps/{pcap_file}'
+    
+    os.makedirs('/opt/pathsteer/data/pcaps', exist_ok=True)
+    
+    # Capture on all interfaces
+    cmd = ['tcpdump', '-i', 'any', '-w', pcap_path]
+    if duration > 0:
+        cmd.extend(['-G', str(duration), '-W', '1'])
+    
+    pcap_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return jsonify({'status': 'recording', 'file': pcap_file})
+
+@app.route('/api/pcap/stop', methods=['POST'])
+def api_pcap_stop():
+    """Stop packet capture"""
+    global pcap_process, pcap_file
+    import subprocess
+    
+    if pcap_process:
+        pcap_process.terminate()
+        pcap_process.wait()
+        pcap_process = None
+    
+    return jsonify({'status': 'stopped', 'file': pcap_file})
+
+@app.route('/api/pcap/download/<filename>')
+def api_pcap_download(filename):
+    """Download PCAP file"""
+    from flask import send_file
+    pcap_path = f'/opt/pathsteer/data/pcaps/{filename}'
+    if os.path.exists(pcap_path):
+        return send_file(pcap_path, as_attachment=True)
+    return jsonify({'error': 'File not found'}), 404
+
