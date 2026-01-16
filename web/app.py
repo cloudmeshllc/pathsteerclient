@@ -22,6 +22,15 @@ from flask import Flask, render_template, jsonify, request, Response
 
 app = Flask(__name__)
 
+# Map GUI uplink names to daemon internal names
+UPLINK_MAP = {'fa': 'fiber1', 'fb': 'fiber2', 'cell_a': 'cell_a', 'cell_b': 'cell_b', 'sl_a': 'sl_a', 'sl_b': 'sl_b'}
+UPLINK_MAP_REV = {v: k for k, v in UPLINK_MAP.items()}
+
+def map_uplink(name):
+    """Convert GUI name to daemon name"""
+    return UPLINK_MAP.get(name, name)
+
+
 # Paths
 STATUS_PATH = '/run/pathsteer/status.json'
 COMMAND_PATH = '/run/pathsteer/command'
@@ -122,7 +131,7 @@ def api_force_uplink():
     """Force switch to specific uplink"""
     data = request.get_json()
     uplink = data.get('uplink', 'auto')
-    send_command(f'force:{uplink}')
+    send_command(f'force:{map_uplink(uplink)}')
     return jsonify({'status': 'ok', 'uplink': uplink})
 
 @app.route('/api/control/fail', methods=['POST'])
@@ -130,7 +139,7 @@ def api_force_fail():
     """Force fail an uplink (trigger protection)"""
     data = request.get_json()
     uplink = data.get('uplink')
-    send_command(f'fail:{uplink}')
+    send_command(f'fail:{map_uplink(uplink)}')
     return jsonify({'status': 'ok', 'uplink': uplink, 'action': 'force_fail'})
 
 @app.route('/api/control/trigger', methods=['POST'])
