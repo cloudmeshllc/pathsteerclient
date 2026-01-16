@@ -272,14 +272,6 @@ def toggle_uplink():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-if __name__ == '__main__':
-    # Ensure directories exist
-    os.makedirs('/run/pathsteer', exist_ok=True)
-    
-    # Run with threading for SSE support
-    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
-
-
 # =============================================================================
 # CHAOS CONTROL PANEL ROUTES
 # =============================================================================
@@ -369,3 +361,10 @@ def api_pcap_download(filename):
         return send_file(pcap_path, as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
 
+
+if __name__ == '__main__':
+    # Ensure directories exist
+    os.makedirs('/run/pathsteer', exist_ok=True)
+    
+    # Run with threading for SSE support
+    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
