@@ -1407,6 +1407,22 @@ async function toggleUplink(name) {
     console.log('Toggled', name, data);
 }
 
+/* Load event history from database */
+async function loadEventHistory() {
+    try {
+        const resp = await fetch("/api/events/history?limit=50");
+        const events = await resp.json();
+        const feed = document.getElementById("feed");
+        events.reverse().forEach(e => {
+            const ts = e.timestamp ? e.timestamp.split(" ")[1] || e.timestamp.substring(11,19) : "";
+            const item = document.createElement("div");
+            item.className = "feed-item " + e.type;
+            item.innerHTML = `<div class="feed-time">${ts}</div><div class="feed-msg">${e.message}${e.detail ? " <span class=\"feed-reason\">[" + e.detail + "]</span>" : ""}</div>`;
+            feed.appendChild(item);
+        });
+    } catch(err) { console.log("Could not load event history:", err); }
+}
+
 /* Load event history on page load */
 loadEventHistory();
 </script>
