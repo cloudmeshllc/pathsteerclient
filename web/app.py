@@ -362,9 +362,65 @@ def api_pcap_download(filename):
     return jsonify({'error': 'File not found'}), 404
 
 
+# =============================================================================
+# PERSISTENT EVENTS API
+# =============================================================================
+
+@app.route('/api/events/log', methods=['POST'])
+def api_log_event():
+    """Log an event to persistent storage"""
+    data = request.get_json()
+    event_type = data.get('type', 'info')
+    message = data.get('message', '')
+    detail = data.get('detail', '')
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO events (type, message, detail) VALUES (?, ?, ?)',
+            (event_type, message, detail)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/events/history')
+def api_events_history():
+    """Get event history"""
+    limit = request.args.get('limit', 100, type=int)
+    event_type = request.args.get('type', None)
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        query = 'SELECT timestamp, type, message, detail FROM events'
+        params = []
+        
+        if event_type:
+            query += ' WHERE type = ?'
+            params.append(event_type)
+        
+        query += ' ORDER BY timestamp DESC LIMIT ?'
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        events = [{'timestamp': r[0], 'type': r[1], 'message': r[2], 'detail': r[3]} for r in rows]
+        return jsonify(events)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Ensure directories exist
     os.makedirs('/run/pathsteer', exist_ok=True)
     
     # Run with threading for SSE support
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+
