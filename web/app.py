@@ -417,10 +417,82 @@ def api_events_history():
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# SETTINGS PAGE
+# =============================================================================
+
+SETTINGS_FILE = '/opt/pathsteer/data/settings.json'
+DEFAULT_SETTINGS = {
+    'rtt_spike_pct': 50,
+    'loss_threshold_pct': 10,
+    'rsrp_drop_db': 10,
+    'consec_fail_threshold': 3,
+    'probe_interval_sec': 1,
+    'preroll_ms': 200,
+    'min_hold_sec': 10,
+    'clean_exit_sec': 5,
+    'controller_a': '10.42.0.1',
+    'controller_b': '10.42.0.2',
+    'c8000_enabled': False,
+    'gps_sample_interval': 5,
+    'data_retention_days': 14
+}
+
+@app.route('/settings')
+def settings_page():
+    return render_template('settings.html')
+
+@app.route('/api/settings', methods=['GET'])
+def api_get_settings():
+    try:
+        with open(SETTINGS_FILE, 'r') as f:
+            return jsonify(json.load(f))
+    except:
+        return jsonify(DEFAULT_SETTINGS)
+
+@app.route('/api/settings', methods=['POST'])
+def api_save_settings():
+    settings = request.get_json()
+    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(settings, f, indent=2)
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/settings/defaults', methods=['POST'])
+def api_restore_defaults():
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(DEFAULT_SETTINGS, f, indent=2)
+    return jsonify({'status': 'ok'})
+
+
+# =============================================================================
+# CONFIG API
+# =============================================================================
+
+CONFIG_FILE = '/opt/pathsteer/data/config.json'
+
+@app.route('/api/config')
+def api_get_config():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return jsonify(json.load(f))
+    except:
+        return jsonify({"deployment_type": "mobile", "show_map": True})
+
+@app.route('/api/config', methods=['POST'])
+def api_save_config():
+    config = request.get_json()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+    return jsonify({'status': 'ok'})
+
+
 if __name__ == '__main__':
     # Ensure directories exist
     os.makedirs('/run/pathsteer', exist_ok=True)
     
     # Run with threading for SSE support
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+
+
 

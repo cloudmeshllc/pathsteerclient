@@ -1,0 +1,19 @@
+{
+    "deployment_type": "mobile",
+    "uplinks": {
+        "cell_a": {"enabled": true, "name": "CELL_A", "carrier": "T-Mobile"},
+        "cell_b": {"enabled": true, "name": "CELL_B", "carrier": "AT&T"},
+        "sl_a": {"enabled": true, "name": "SL_A"},
+        "sl_b": {"enabled": true, "name": "SL_B"},
+        "fa": {"enabled": true, "name": "FA"},
+        "fb": {"enabled": true, "name": "FB"}
+    },
+    "show_map": true,
+    "rtt_spike_pct": 50,
+    "loss_threshold_pct": 10,
+    "probe_interval_sec": 1,
+    "preroll_ms": 200,
+    "min_hold_sec": 10,
+    "controller_a": "pop-dal.pathsteernetworks.com",
+    "controller_b": "pop-dal-b.pathsteernetworks.com"
+}

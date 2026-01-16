@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathSteer Settings</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0a0e14; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+        h1 { color: #ff6b35; margin-bottom: 20px; }
+        h2 { color: #4ecdc4; margin: 25px 0 15px; font-size: 1.1em; border-bottom: 1px solid #2a3a4a; padding-bottom: 5px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .back-link { color: #4ecdc4; text-decoration: none; }
+        .back-link:hover { text-decoration: underline; }
+        
+        .setting-group { background: #141a22; border: 1px solid #2a3a4a; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #1a2430; }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-label { flex: 1; }
+        .setting-label small { color: #666; display: block; margin-top: 3px; }
+        .setting-input { width: 120px; text-align: right; }
+        
+        input[type="number"], input[type="text"], select {
+            background: #1a2430; border: 1px solid #2a3a4a; color: #e0e0e0;
+            padding: 8px 12px; border-radius: 4px; font-size: 14px;
+        }
+        input[type="number"]:focus, input[type="text"]:focus, select:focus {
+            border-color: #4ecdc4; outline: none;
+        }
+        
+        .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.95em; margin: 5px; }
+        .btn-save { background: linear-gradient(135deg, #27ae60, #2ecc71); color: #fff; }
+        .btn-reset { background: #2a3a4a; color: #e0e0e0; }
+        .btn-danger { background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; }
+        .btn:hover { transform: scale(1.02); }
+        
+        .actions { text-align: center; margin-top: 20px; }
+        .status { padding: 10px; border-radius: 4px; margin: 10px 0; display: none; }
+        .status.success { display: block; background: rgba(39, 174, 96, 0.2); color: #2ecc71; }
+        .status.error { display: block; background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+        
+        .toggle { position: relative; width: 50px; height: 26px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #2a3a4a; border-radius: 26px; transition: 0.3s; }
+        .toggle .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #666; border-radius: 50%; transition: 0.3s; }
+        .toggle input:checked + .slider { background: #4ecdc4; }
+        .toggle input:checked + .slider:before { transform: translateX(24px); background: #fff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-bar">
+            <h1>⚙️ SETTINGS</h1>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="setting-group">
+            <h2>🎯 Tripwire Thresholds</h2>
+            <div class="setting-row">
+                <div class="setting-label">RTT Spike Threshold<small>Percentage increase from baseline to trigger</small></div>
+                <div class="setting-input"><input type="number" id="rtt_spike_pct" value="50" min="10" max="500">%</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Loss Threshold<small>Packet loss percentage to trigger</small></div>
+                <div class="setting-input"><input type="number" id="loss_threshold_pct" value="10" min="1" max="100">%</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">RSRP Drop Threshold<small>dB drop from baseline (cellular)</small></div>
+                <div class="setting-input"><input type="number" id="rsrp_drop_db" value="10" min="3" max="30"> dB</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Consecutive Failures<small>Probes before marking unavailable</small></div>
+                <div class="setting-input"><input type="number" id="consec_fail_threshold" value="3" min="1" max="10"></div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <h2>⏱️ Timing</h2>
+            <div class="setting-row">
+                <div class="setting-label">Probe Interval<small>Seconds between uplink probes</small></div>
+                <div class="setting-input"><input type="number" id="probe_interval_sec" value="1" min="1" max="30"> sec</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Preroll Time<small>ms to enable duplication before switch</small></div>
+                <div class="setting-input"><input type="number" id="preroll_ms" value="200" min="0" max="2000"> ms</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Minimum Hold Time<small>Seconds before allowing another switch</small></div>
+                <div class="setting-input"><input type="number" id="min_hold_sec" value="10" min="1" max="120"> sec</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Clean Exit Time<small>Seconds of stability before normal mode</small></div>
+                <div class="setting-input"><input type="number" id="clean_exit_sec" value="5" min="1" max="60"> sec</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <h2>🌐 Controllers</h2>
+            <div class="setting-row">
+                <div class="setting-label">Controller A (Primary)<small>IP address of primary POP</small></div>
+                <div class="setting-input"><input type="text" id="controller_a" value="10.42.0.1" style="width:150px"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Controller B (Secondary)<small>IP address of backup POP</small></div>
+                <div class="setting-input"><input type="text" id="controller_b" value="10.42.0.2" style="width:150px"></div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">C8000 API Enabled<small>Enable Catalyst 8000 orchestration</small></div>
+                <div class="setting-input">
+                    <label class="toggle"><input type="checkbox" id="c8000_enabled"><span class="slider"></span></label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <h2>📊 Data Collection</h2>
+            <div class="setting-row">
+                <div class="setting-label">Training Mode GPS Interval<small>Seconds between GPS samples in training</small></div>
+                <div class="setting-input"><input type="number" id="gps_sample_interval" value="5" min="1" max="60"> sec</div>
+            </div>
+            <div class="setting-row">
+                <div class="setting-label">Data Retention Days<small>Days to keep training samples</small></div>
+                <div class="setting-input"><input type="number" id="data_retention_days" value="14" min="1" max="365"> days</div>
+            </div>
+        </div>
+        
+        <div class="actions">
+            <button class="btn btn-save" onclick="saveSettings()">💾 Save Settings</button>
+            <button class="btn btn-reset" onclick="loadSettings()">🔄 Reset</button>
+            <button class="btn btn-danger" onclick="restoreDefaults()">⚠️ Restore Defaults</button>
+        </div>
+    </div>
+    
+    <script>
+        const SETTINGS_KEYS = [
+            'rtt_spike_pct', 'loss_threshold_pct', 'rsrp_drop_db', 'consec_fail_threshold',
+            'probe_interval_sec', 'preroll_ms', 'min_hold_sec', 'clean_exit_sec',
+            'controller_a', 'controller_b', 'c8000_enabled',
+            'gps_sample_interval', 'data_retention_days'
+        ];
+        
+        async function loadSettings() {
+            try {
+                const resp = await fetch('/api/settings');
+                const settings = await resp.json();
+                SETTINGS_KEYS.forEach(key => {
+                    const el = document.getElementById(key);
+                    if (el) {
+                        if (el.type === 'checkbox') el.checked = settings[key] || false;
+                        else el.value = settings[key] || el.value;
+                    }
+                });
+                showStatus('Settings loaded', 'success');
+            } catch (e) {
+                showStatus('Failed to load settings', 'error');
+            }
+        }
+        
+        async function saveSettings() {
+            const settings = {};
+            SETTINGS_KEYS.forEach(key => {
+                const el = document.getElementById(key);
+                if (el) {
+                    if (el.type === 'checkbox') settings[key] = el.checked;
+                    else if (el.type === 'number') settings[key] = parseFloat(el.value);
+                    else settings[key] = el.value;
+                }
+            });
+            
+            try {
+                const resp = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+                if (resp.ok) showStatus('Settings saved! Restart daemon to apply.', 'success');
+                else showStatus('Failed to save settings', 'error');
+            } catch (e) {
+                showStatus('Failed to save settings', 'error');
+            }
+        }
+        
+        async function restoreDefaults() {
+            if (!confirm('Restore all settings to defaults?')) return;
+            try {
+                await fetch('/api/settings/defaults', {method: 'POST'});
+                loadSettings();
+                showStatus('Defaults restored', 'success');
+            } catch (e) {
+                showStatus('Failed to restore defaults', 'error');
+            }
+        }
+        
+        function showStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = 'status ' + type;
+            setTimeout(() => el.className = 'status', 3000);
+        }
+        
+        loadSettings();
+    </script>
+</body>
+</html>
