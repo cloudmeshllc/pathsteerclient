@@ -1307,12 +1307,13 @@ fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
 const eventLog = [];
 let logFilter = "all";
 
-function addLogEntry(level, msg, gps) {
+function addLogEntry(level, msg, gps, persist=true) {
     const now = new Date();
     const ts = now.toTimeString().split(" ")[0] + "." + String(now.getMilliseconds()).padStart(3, "0");
     const entry = { time: ts, level, msg, gps: gps || null, timestamp: now };
     eventLog.push(entry);
     if (eventLog.length > 500) eventLog.shift();
+    if (persist) { fetch("/api/events/log", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:level,message:msg,detail:gps||""})}).catch(()=>{}); }
     renderLog();
 }
 
@@ -1364,7 +1365,7 @@ function checkStateChanges(s) {
 }
 
 // Startup log
-addLogEntry("info", "PathSteer Guardian UI connected");
+addLogEntry("info", "PathSteer Guardian UI connected", null, false);
 
 // Update stats from status
 function updateStats(s) {
@@ -1412,14 +1413,12 @@ async function loadEventHistory() {
     try {
         const resp = await fetch("/api/events/history?limit=50");
         const events = await resp.json();
-        const feed = document.getElementById("feed");
         events.reverse().forEach(e => {
             const ts = e.timestamp ? e.timestamp.split(" ")[1] || e.timestamp.substring(11,19) : "";
-            const item = document.createElement("div");
-            item.className = "feed-item " + e.type;
-            item.innerHTML = `<div class="feed-time">${ts}</div><div class="feed-msg">${e.message}${e.detail ? " <span class=\"feed-reason\">[" + e.detail + "]</span>" : ""}</div>`;
-            feed.appendChild(item);
+            /* Add to Event Log (bottom) */
+            eventLog.push({time: ts, level: e.type, msg: e.message, gps: e.detail || null, timestamp: new Date(e.timestamp)});
         });
+        renderLog();
     } catch(err) { console.log("Could not load event history:", err); }
 }
 
