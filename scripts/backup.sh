@@ -1,9 +1,8 @@
 #!/bin/bash
-# PathSteer local backup - runs hourly, keeps 48 hours locally
-# Optionally syncs to controller
+# PathSteer local backup - runs hourly, keeps 2 weeks locally
 
 BACKUP_DIR="/opt/pathsteer/backups"
-MAX_AGE_HOURS=48
+MAX_AGE_DAYS=14
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
@@ -17,11 +16,10 @@ tar czf "$BACKUP_DIR/pathsteer_$TIMESTAMP.tar.gz" \
     /etc/pathsteer \
     2>/dev/null
 
-# Prune old backups
-find "$BACKUP_DIR" -name "pathsteer_*.tar.gz" -mmin +$((MAX_AGE_HOURS * 60)) -delete
+# Prune backups older than 2 weeks
+find "$BACKUP_DIR" -name "pathsteer_*.tar.gz" -mtime +$MAX_AGE_DAYS -delete
 
-# Optional: sync to controller (uncomment when ready)
-# rsync -az "$BACKUP_DIR/" controller.pathsteer.com:/backups/edge-protectli-1/
+# Also prune old training DBs
+find "$BACKUP_DIR" -name "training_*.db" -mtime +$MAX_AGE_DAYS -delete
 
-echo "Backup complete: pathsteer_$TIMESTAMP.tar.gz"
-ls -lh "$BACKUP_DIR" | tail -5
+echo "$(date): Backup complete, pruned files older than ${MAX_AGE_DAYS} days"
