@@ -1,0 +1,20 @@
+default via 10.201.3.2 dev veth_sl_a 
+default via 192.168.0.1 dev enp1s0 proto dhcp src 192.168.0.139 metric 100 
+10.1.1.0/24 dev enp6s0 proto kernel scope link src 10.1.1.1 linkdown 
+10.201.1.0/30 dev veth_fa proto kernel scope link src 10.201.1.1 
+10.201.3.0/30 dev veth_sl_a proto kernel scope link src 10.201.3.1 
+104.204.136.48/28 dev wlp7s0 proto kernel scope link src 104.204.136.50 
+192.168.0.0/24 dev enp1s0 proto kernel scope link src 192.168.0.139 metric 100 
+192.168.0.1 dev enp1s0 proto dhcp scope link src 192.168.0.139 metric 100 
+::1 dev lo proto kernel metric 256 pref medium
+2605:a601:aa80:6238::/64 dev enp1s0 proto ra metric 100 expires 86174sec pref medium
+fd1d:4012:5624:1::/64 proto ra metric 100 expires 1657sec pref medium
+	nexthop via fe80::262d:6cff:fe61:a694 dev enp1s0 weight 1 
+	nexthop via fe80::c6a8:16ff:fe47:f354 dev enp1s0 weight 1 
+fd7a:115c:a1e0::d201:9d15 dev tailscale0 proto kernel metric 256 pref medium
+fe80::/64 dev pathsteer-tun0 proto kernel metric 256 pref medium
+fe80::/64 dev veth_fa proto kernel metric 256 pref medium
+fe80::/64 dev veth_sl_a proto kernel metric 256 pref medium
+fe80::/64 dev enp1s0 proto kernel metric 256 pref medium
+fe80::/64 dev tailscale0 proto kernel metric 256 pref medium
+default via fe80::5e62:8bff:fea3:52dd dev enp1s0 proto ra metric 100 expires 1574sec pref medium
