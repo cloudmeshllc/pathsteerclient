@@ -327,8 +327,8 @@
                 // Reset all
                 UPLINKS.forEach(u => {
                     chaosState[u] = {rtt:0, jitter:0, loss:0};
-                    document.querySelectorAll(`input[type="range"]`).forEach(s => s.value = 0);
-                    document.querySelectorAll(`.slider-value`).forEach(s => s.textContent = '0ms');
+                    document.querySelectorAll('input[type="range"]').forEach(s => s.value = 0);
+                    document.querySelectorAll('.slider-value').forEach(s => s.textContent = '0ms');
                 });
                 await fetch('/api/chaos/reset', { method: 'POST' });
                 logEvent('chaos', '🔄 All chaos reset');
