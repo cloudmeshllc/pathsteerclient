@@ -439,6 +439,32 @@
         
         @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
         .uplink-card.unavailable { opacity: 0.4; }
+        .uplink-card.next-best { border-color: var(--yellow); box-shadow: 0 0 8px rgba(247,220,111,0.3); }
+        .uplink-card[data-rank]::before {
+            position: absolute;
+            top: 8px;
+            right: 55px;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .uplink-card[data-rank="1"]::before {
+            content: "NEXT " attr(data-prob);
+            background: var(--yellow);
+            color: #000;
+        }
+        .uplink-card[data-rank="2"]::before {
+            content: "2ND " attr(data-prob);
+            background: #555;
+            color: #ccc;
+        }
+        .uplink-card[data-rank="3"]::before {
+            content: "3RD " attr(data-prob);
+            background: #333;
+            color: #888;
+        }
+
         .uplink-card.lte { border-left: 3px solid var(--tmo-magenta); }
         .uplink-card.lte.att { border-left-color: var(--att-blue); }
         .uplink-card.starlink { border-left: 3px solid var(--sl-blue); }
@@ -1370,10 +1396,10 @@ function renderUplinks(uplinks) {
     
     // Calculate probabilities (inverse of score, normalized)
     const totalInvScore = scores.reduce((sum, s) => sum + (1000 / (s.score + 1)), 0);
-    const nextBestProbs = {};
+    const nextBest = {};
     scores.forEach((s, i) => {
         const prob = Math.round(((1000 / (s.score + 1)) / totalInvScore) * 100);
-        nextBestProbs[s.name] = { rank: i + 1, prob };
+        nextBest[s.name] = { rank: i + 1, prob };
     });
 
     
@@ -1382,7 +1408,7 @@ function renderUplinks(uplinks) {
         const typeClass = u.name.startsWith('cell') ? 'lte' : 
                          u.name.startsWith('sl') ? 'starlink' : 'fiber';
         const carrierClass = u.cellular?.carrier === 'AT&T' ? 'att' : '';
-        const activeClass = u.active ? 'active' : (nextBestProbs[u.name]?.rank === 1 ? 'next-best' : '');
+        const activeClass = u.active ? 'active' : (nextBest[u.name]?.rank === 1 ? 'next-best' : '');
         const availClass = u.available ? '' : 'unavailable';
         
         // Update sparkline data
@@ -1426,7 +1452,11 @@ function renderUplinks(uplinks) {
         
         const card = document.createElement('div');
         card.className = `uplink-card ${typeClass} ${carrierClass} ${activeClass} ${availClass}`;
-        if (nextBestProbs[u.name]) { card.setAttribute("data-rank", nextBestProbs[u.name].rank); card.setAttribute("data-next-prob", `${nextBestProbs[u.name].prob}%`); }
+        if (nextBest[u.name]) {
+            card.setAttribute('data-rank', nextBest[u.name].rank);
+            card.setAttribute('data-prob', nextBest[u.name].prob + '%');
+        }
+        if (nextBest[u.name]) { card.setAttribute("data-rank", nextBest[u.name].rank); card.setAttribute("data-next-prob", `${nextBest[u.name].prob}%`); }
         card.innerHTML = `
             <div class="uplink-header">
                 <span class="uplink-name">${u.name.toUpperCase()}</span>
