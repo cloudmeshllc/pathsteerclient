@@ -496,3 +496,18 @@ if __name__ == '__main__':
 
 
 
+
+@app.route('/api/chaos/reset', methods=['POST'])
+def api_chaos_reset():
+    """Reset all chaos injection"""
+    global chaos_state
+    chaos_state = {}
+    # Clear the file too
+    with open('/run/pathsteer/chaos.json', 'w') as f:
+        f.write('{}')
+    return jsonify({'status': 'ok', 'message': 'Chaos reset'})
+
+@app.route('/api/chaos/state', methods=['GET'])
+def api_chaos_state():
+    """Get current chaos injection state"""
+    return jsonify(chaos_state)
