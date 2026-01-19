@@ -833,6 +833,26 @@
         </div>
         
         <div class="stat-card">
+            <h3>Path Prediction</h3>
+            <div class="stat-row">
+                <span class="stat-label">Active</span>
+                <span class="stat-value good" id="pred-active">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Next Best</span>
+                <span class="stat-value" id="pred-next" style="color:var(--yellow)">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">2nd</span>
+                <span class="stat-value" id="pred-2nd" style="color:#888">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">3rd</span>
+                <span class="stat-value" id="pred-3rd" style="color:#666">--</span>
+            </div>
+        </div>
+        
+        <div class="stat-card">
             <h3>Uptime</h3>
             <div class="stat-row">
                 <span class="stat-label">Session</span>
@@ -959,6 +979,22 @@ function updateStats(s) {
         document.getElementById('stat-best-path').textContent = sorted[0].name.toUpperCase() + ' (' + (sorted[0].rtt_ms||0).toFixed(0) + 'ms)';
         document.getElementById('stat-worst-path').textContent = sorted[sorted.length-1].name.toUpperCase() + ' (' + (sorted[sorted.length-1].rtt_ms||0).toFixed(0) + 'ms)';
         document.getElementById('stat-diversity').textContent = available.length + '/' + (s.uplinks||[]).filter(u=>u.enabled).length;
+        
+        // Path Prediction update
+        const activeUplink = (s.uplinks || []).find(u => u.active);
+        const nonActive = available.filter(u => !u.active);
+        const scored = nonActive.map(u => ({
+            name: u.name,
+            score: (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10
+        })).sort((a, b) => a.score - b.score);
+        
+        const totalInv = scored.reduce((s, x) => s + 1000/(x.score+1), 0);
+        const probs = scored.map(x => ({ name: x.name, prob: Math.round((1000/(x.score+1))/totalInv*100) }));
+        
+        document.getElementById('pred-active').textContent = activeUplink ? activeUplink.name.toUpperCase() : '--';
+        document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase() + ' (' + probs[0].prob + '%)' : '--';
+        document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase() + ' (' + probs[1].prob + '%)' : '--';
+        document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase() + ' (' + probs[2].prob + '%)' : '--';
     }
     
     // Throughput (placeholder - would come from actual traffic stats)
@@ -1435,6 +1471,22 @@ function updateStats(s) {
         document.getElementById('stat-best-path').textContent = sorted[0].name.toUpperCase() + ' (' + (sorted[0].rtt_ms||0).toFixed(0) + 'ms)';
         document.getElementById('stat-worst-path').textContent = sorted[sorted.length-1].name.toUpperCase() + ' (' + (sorted[sorted.length-1].rtt_ms||0).toFixed(0) + 'ms)';
         document.getElementById('stat-diversity').textContent = available.length + '/' + (s.uplinks||[]).filter(u=>u.enabled).length;
+        
+        // Path Prediction update
+        const activeUplink = (s.uplinks || []).find(u => u.active);
+        const nonActive = available.filter(u => !u.active);
+        const scored = nonActive.map(u => ({
+            name: u.name,
+            score: (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10
+        })).sort((a, b) => a.score - b.score);
+        
+        const totalInv = scored.reduce((s, x) => s + 1000/(x.score+1), 0);
+        const probs = scored.map(x => ({ name: x.name, prob: Math.round((1000/(x.score+1))/totalInv*100) }));
+        
+        document.getElementById('pred-active').textContent = activeUplink ? activeUplink.name.toUpperCase() : '--';
+        document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase() + ' (' + probs[0].prob + '%)' : '--';
+        document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase() + ' (' + probs[1].prob + '%)' : '--';
+        document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase() + ' (' + probs[2].prob + '%)' : '--';
     }
     
     // Throughput (placeholder - would come from actual traffic stats)
