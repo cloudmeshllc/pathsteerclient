@@ -1083,6 +1083,7 @@ function getSignalBars(rsrp) {
 }
 
 function renderUplinks(uplinks) {
+    console.log("renderUplinks called with", uplinks.length, "uplinks");
     const container = document.getElementById('uplinks');
     container.innerHTML = '';
     
@@ -1096,10 +1097,15 @@ function renderUplinks(uplinks) {
     // Calculate probabilities (inverse of score, normalized)
     const totalInvScore = scores.reduce((sum, s) => sum + (1000 / (s.score + 1)), 0);
     const nextBest = {};
+    console.log("Scores:", scores);
     scores.forEach((s, i) => {
+    console.log("nextBest:", nextBest);
         const prob = Math.round(((1000 / (s.score + 1)) / totalInvScore) * 100);
+    console.log("nextBest:", nextBest);
         nextBest[s.name] = { rank: i + 1, prob };
+    console.log("nextBest:", nextBest);
     });
+    console.log("nextBest:", nextBest);
 
     uplinks.forEach(u => {
         
