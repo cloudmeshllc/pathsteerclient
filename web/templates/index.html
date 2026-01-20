@@ -1124,7 +1124,7 @@ function renderUplinks(uplinks) {
     container.innerHTML = '';
     
     // Calculate scores for next-best prediction
-    const scores = uplinks.filter(u => u.available && !u.active).map(u => {
+    const scores = uplinks.filter(u => u.enabled && u.available && !u.active).map(u => {
         // Score: lower is better (like daemon logic)
         const score = (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10;
         return { name: u.name, score };
@@ -1517,6 +1517,17 @@ async function toggleUplink(name) {
     });
     const data = await resp.json();
     console.log('Toggled', name, data);
+    
+    // Immediately update the toggle UI
+    const card = document.querySelector(`.uplink-card[data-name="${name}"]`);
+    if (card) {
+        const toggle = card.querySelector('.uplink-toggle');
+        if (toggle) {
+            toggle.classList.toggle('enabled', data.enabled);
+        }
+        // Also dim/undim the card
+        card.style.opacity = data.enabled ? '1' : '0.5';
+    }
 }
 
 /* Load event history from database */
