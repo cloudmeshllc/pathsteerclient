@@ -511,3 +511,26 @@ def api_chaos_reset():
 def api_chaos_state():
     """Get current chaos injection state"""
     return jsonify(chaos_state)
+
+# RF Mitigation state
+rf_mitigation_enabled = False
+
+@app.route('/api/radio/mitigation', methods=['GET', 'POST'])
+def api_radio_mitigation():
+    """Get or set RF mitigation status"""
+    global rf_mitigation_enabled
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        rf_mitigation_enabled = data.get('enabled', False)
+        
+        # Call the actual mitigation script
+        import subprocess
+        if rf_mitigation_enabled:
+            subprocess.run(['/opt/pathsteer/scripts/rf-mitigation.sh', 'enable'], capture_output=True)
+        else:
+            subprocess.run(['/opt/pathsteer/scripts/rf-mitigation.sh', 'disable'], capture_output=True)
+        
+        return jsonify({'status': 'ok', 'enabled': rf_mitigation_enabled})
+    
+    return jsonify({'enabled': rf_mitigation_enabled})

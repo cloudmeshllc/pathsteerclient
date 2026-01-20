@@ -116,6 +116,16 @@
         </div>
         
         <div class="setting-group">
+            <h2>📡 RF Mitigation</h2>
+            <div class="setting-row">
+                <div class="setting-label">Dual Modem RF Mitigation<small>Reduces interference between cellular modems by alternating power levels</small></div>
+                <div class="setting-input">
+                    <label class="toggle"><input type="checkbox" id="rf_mitigation_enabled" onchange="toggleRfMitigation(this.checked)"><span class="slider"></span></label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
             <h2>📊 Data Collection</h2>
             <div class="setting-row">
                 <div class="setting-label">Training Mode GPS Interval<small>Seconds between GPS samples in training</small></div>
@@ -135,6 +145,33 @@
     </div>
     
     <script>
+        // RF Mitigation toggle
+        async function loadRfMitigation() {
+            try {
+                const resp = await fetch('/api/radio/mitigation');
+                const data = await resp.json();
+                document.getElementById('rf_mitigation_enabled').checked = data.enabled || false;
+            } catch (e) {
+                console.log('RF mitigation status unavailable');
+            }
+        }
+        
+        async function toggleRfMitigation(enabled) {
+            try {
+                await fetch('/api/radio/mitigation', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ enabled })
+                });
+                showStatus('RF Mitigation ' + (enabled ? 'enabled' : 'disabled'), 'success');
+            } catch (e) {
+                showStatus('Failed to update RF mitigation', 'error');
+            }
+        }
+        
+        // Load RF status on page load
+        document.addEventListener('DOMContentLoaded', loadRfMitigation);
+        
         const SETTINGS_KEYS = [
             'rtt_spike_pct', 'loss_threshold_pct', 'rsrp_drop_db', 'consec_fail_threshold',
             'probe_interval_sec', 'preroll_ms', 'min_hold_sec', 'clean_exit_sec',
