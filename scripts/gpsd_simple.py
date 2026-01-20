@@ -1,52 +1,55 @@
 #!/usr/bin/env python3
-"""Simple GPS reader - writes location to JSON"""
+"""GPS reader using gpsd - writes location to JSON"""
 
-import serial
 import json
 import time
+import socket
 from pathlib import Path
 
-GPS_PORT = "/dev/ttyUSB0"
-GPS_BAUD = 4800
 OUTPUT = "/run/pathsteer/gps.json"
+GPSD_HOST = "localhost"
+GPSD_PORT = 2947
 
-def parse_gprmc(line):
-    """Parse $GPRMC sentence"""
-    parts = line.split(',')
-    if len(parts) < 7 or parts[2] != 'A':  # A = valid fix
-        return None
-    
-    # Parse lat/lon
-    lat = float(parts[3][:2]) + float(parts[3][2:]) / 60
-    if parts[4] == 'S':
-        lat = -lat
-    
-    lon = float(parts[5][:3]) + float(parts[5][3:]) / 60
-    if parts[6] == 'W':
-        lon = -lon
-    
-    return {"lat": round(lat, 6), "lon": round(lon, 6), "fix": True, "timestamp": time.time()}
+def get_gps_data():
+    """Get GPS data from gpsd"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        sock.connect((GPSD_HOST, GPSD_PORT))
+        sock.sendall(b'?WATCH={"enable":true,"json":true}\n')
+        
+        buffer = ""
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            data = sock.recv(1024).decode('utf-8', errors='ignore')
+            buffer += data
+            for line in buffer.split('\n'):
+                if '"class":"TPV"' in line:
+                    try:
+                        tpv = json.loads(line)
+                        if tpv.get('mode', 0) >= 2:
+                            sock.close()
+                            return {
+                                "lat": round(tpv.get('lat', 0), 6),
+                                "lon": round(tpv.get('lon', 0), 6),
+                                "speed_mph": round(tpv.get('speed', 0) * 2.237, 1),
+                                "heading": round(tpv.get('track', 0), 1),
+                                "fix": True,
+                                "timestamp": time.time()
+                            }
+                    except:
+                        pass
+        sock.close()
+    except Exception as e:
+        pass
+    return {"fix": False, "lat": 0, "lon": 0, "speed_mph": 0, "timestamp": time.time()}
 
 def main():
-    Path("/run/pathsteer").mkdir(parents=True, exist_ok=True)
-    
-    try:
-        ser = serial.Serial(GPS_PORT, GPS_BAUD, timeout=1)
-    except Exception as e:
-        print(f"GPS port error: {e}")
-        Path(OUTPUT).write_text(json.dumps({"fix": False, "error": str(e)}))
-        return
-    
+    Path("/run/pathsteer").mkdir(exist_ok=True)
     while True:
-        try:
-            line = ser.readline().decode('ascii', errors='ignore').strip()
-            if line.startswith('$GPRMC'):
-                data = parse_gprmc(line)
-                if data:
-                    Path(OUTPUT).write_text(json.dumps(data, indent=2))
-        except Exception as e:
-            print(f"Error: {e}")
-        time.sleep(0.1)
+        data = get_gps_data()
+        Path(OUTPUT).write_text(json.dumps(data))
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
