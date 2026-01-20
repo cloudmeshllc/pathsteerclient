@@ -600,13 +600,7 @@
             .logo h1 { font-size: 12px; }
         }
         
-        @media (max-width: 600px) {
-            .dashboard {
-                grid-template-rows: 40px auto auto auto 100px;
-            }
-            .header {
-                justify-content: center;
-            }
+        
             .badges { 
                 gap: 4px;
             }
@@ -643,6 +637,142 @@
             }
             .log-time { min-width: 70px; }
             .log-level { min-width: 50px; }
+        }
+
+        
+        /* Enhanced Mobile Styles */
+        @media (max-width: 600px) {
+            .dashboard {
+                display: flex;
+                flex-direction: column;
+                height: auto;
+                min-height: 100vh;
+                overflow-y: auto;
+            }
+            .header {
+                position: sticky;
+                top: 0;
+                z-index: 100;
+                padding: 6px 10px;
+                flex-wrap: nowrap;
+                gap: 6px;
+                background: var(--bg);
+                min-height: 44px;
+            }
+            .logo h1 { font-size: 11px; white-space: nowrap; }
+            .speed-display { 
+                font-size: 20px; 
+                font-weight: bold;
+            }
+            .badges { 
+                display: flex;
+                gap: 4px;
+                flex-shrink: 0;
+            }
+            .badge { padding: 3px 6px; font-size: 9px; }
+            
+            /* Uplink cards section - scrollable */
+            .panel.left-panel {
+                flex: 1 1 auto;
+                min-height: 200px;
+                max-height: 50vh;
+                overflow-y: scroll;
+                padding: 8px;
+                -webkit-overflow-scrolling: touch;
+            }
+            .uplink-card {
+                padding: 10px;
+                margin-bottom: 6px;
+            }
+            .uplink-header {
+                margin-bottom: 6px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .uplink-name { font-size: 14px; font-weight: bold; }
+            .uplink-toggle {
+                width: 44px;
+                height: 24px;
+                min-width: 44px;
+            }
+            .uplink-toggle::after {
+                width: 18px;
+                height: 18px;
+            }
+            .uplink-toggle.enabled::after { left: 22px; }
+            
+            /* Metrics - 2 column grid, visible values */
+            .metrics-grid {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 6px !important;
+            }
+            .metric {
+                padding: 6px !important;
+                background: rgba(0,0,0,0.4) !important;
+                border-radius: 4px;
+                text-align: center;
+                min-height: 36px;
+            }
+            .metric-label { 
+                font-size: 9px !important; 
+                display: block !important; 
+                margin-bottom: 3px; 
+                color: var(--muted);
+            }
+            .metric-value { 
+                font-size: 14px !important; 
+                font-weight: bold !important; 
+                display: block !important; 
+            }
+            
+            /* Hide non-essential */
+            .sparkline { display: none !important; }
+            .uplink-actions { display: none !important; }
+            .stats-panel { display: none !important; }
+            .map-legend { display: none !important; }
+            .risk-panel { display: none !important; }
+            
+            /* Map compact */
+            .panel.map-panel {
+                flex: 0 0 180px;
+                min-height: 180px;
+            }
+            
+            /* Right panel - prediction */
+            .panel.right-panel {
+                flex: 0 0 auto;
+                padding: 8px;
+            }
+            .panel.right-panel h3 { font-size: 11px; margin-bottom: 6px; }
+            .stat-row { padding: 3px 0; }
+            .stat-label { font-size: 10px; }
+            .stat-value { font-size: 12px; }
+            
+            /* Mode buttons */
+            .mode-panel { padding: 8px; }
+            .mode-panel h3 { font-size: 10px; }
+            .mode-buttons { gap: 6px; }
+            .mode-buttons .btn { padding: 8px 12px; font-size: 11px; }
+            
+            /* Event log minimal */
+            .event-log {
+                flex: 0 0 100px;
+                font-size: 9px;
+            }
+            .log-time { display: none; }
+            .log-level { min-width: 50px; font-size: 9px; }
+            .log-msg { font-size: 9px; }
+        }
+        
+        /* Very small phones */
+        @media (max-width: 400px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .header { padding: 4px; }
+            .uplink-card { padding: 8px; }
         }
 
         /* Uplink Enable Toggle */
