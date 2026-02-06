@@ -284,3 +284,30 @@ log ""
 log "============================================"
 log "Service routing complete"
 log "============================================"
+
+# ─── NAT and rp_filter fixes (added for veth forwarding) ──────────────────────
+log ""
+log "--- NAT and rp_filter for veth forwarding ---"
+for ns in ns_fa ns_fb ns_sl_a ns_sl_b; do
+    # Get the physical interface in this namespace
+    case "$ns" in
+        ns_fa) phys=enp1s0 ; veth_i=veth_fa_i ; veth_m=veth_fa ;;
+        ns_fb) phys=enp2s0 ; veth_i=veth_fb_i ; veth_m=veth_fb ;;
+        ns_sl_a) phys=enp3s0 ; veth_i=veth_sl_a_i ; veth_m=veth_sl_a ;;
+        ns_sl_b) phys=enp4s0 ; veth_i=veth_sl_b_i ; veth_m=veth_sl_b ;;
+    esac
+
+    # Add MASQUERADE if not present
+    if ip netns exec "$ns" iptables -t nat -C POSTROUTING -o "$phys" -j MASQUERADE 2>/dev/null; then
+        log "  $ns: NAT already configured"
+    else
+        ip netns exec "$ns" iptables -t nat -A POSTROUTING -o "$phys" -j MASQUERADE && \
+            log "  $ns: NAT added on $phys" || true
+    fi
+
+    # Disable rp_filter on veth interfaces (both ends)
+    ip netns exec "$ns" sysctl -qw net.ipv4.conf."$veth_i".rp_filter=0 2>/dev/null || true
+    ip netns exec "$ns" sysctl -qw net.ipv4.conf.all.rp_filter=0 2>/dev/null || true
+    sysctl -qw net.ipv4.conf."$veth_m".rp_filter=0 2>/dev/null || true
+    log "  $ns: rp_filter disabled"
+done
