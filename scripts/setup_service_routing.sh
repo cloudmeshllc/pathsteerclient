@@ -39,10 +39,10 @@ SERVICE_SUBNET="104.204.136.48/28"
 # Only fiber + starlink use namespace isolation.
 
 declare -A NS_CONFIG
-NS_CONFIG[ns_fa]="enp1s0|veth_fa|10.201.1.1|veth_fa_i|10.201.1.2|192.168.0.1|wg-fa-cA:${CTRL_A_PUBKEY},wg-fa-cB:${CTRL_B_PUBKEY}|dhcp"
-NS_CONFIG[ns_fb]="enp2s0|veth_fb|10.201.2.1|veth_fb_i|10.201.2.2|192.168.12.1|wg-fb-cA:${CTRL_A_PUBKEY},wg-fb-cB:${CTRL_B_PUBKEY}|dhcp"
-NS_CONFIG[ns_sl_a]="enp3s0|veth_sl_a|10.201.3.1|veth_sl_a_i|10.201.3.2|192.168.2.1|wg-sa-cA:${CTRL_A_PUBKEY},wg-sa-cB:${CTRL_B_PUBKEY}|dhcp"
-NS_CONFIG[ns_sl_b]="enp4s0|veth_sl_b|10.201.4.1|veth_sl_b_i|10.201.4.2|192.168.1.1|wg-sb-cA:${CTRL_A_PUBKEY},wg-sb-cB:${CTRL_B_PUBKEY}|dhcp"
+NS_CONFIG[ns_fa]="ps_ter_a|veth_fa|10.201.1.1|veth_fa_i|10.201.1.2|192.168.0.1|wg-fa-cA:${CTRL_A_PUBKEY},wg-fa-cB:${CTRL_B_PUBKEY}|dhcp"
+NS_CONFIG[ns_fb]="ps_ter_b|veth_fb|10.201.2.1|veth_fb_i|10.201.2.2|192.168.12.1|wg-fb-cA:${CTRL_A_PUBKEY},wg-fb-cB:${CTRL_B_PUBKEY}|dhcp"
+NS_CONFIG[ns_sl_a]="ps_sl_a|veth_sl_a|10.201.3.1|veth_sl_a_i|10.201.3.2|192.168.2.1|wg-sa-cA:${CTRL_A_PUBKEY},wg-sa-cB:${CTRL_B_PUBKEY}|dhcp"
+NS_CONFIG[ns_sl_b]="ps_sl_b|veth_sl_b|10.201.4.1|veth_sl_b_i|10.201.4.2|100.64.0.1|wg-sb-cA:${CTRL_A_PUBKEY},wg-sb-cB:${CTRL_B_PUBKEY}|dhcp"
 
 # ─── Helper: wait for DHCP lease with retries ────────────────────────────────
 wait_for_dhcp() {
@@ -291,10 +291,10 @@ log "--- NAT and rp_filter for veth forwarding ---"
 for ns in ns_fa ns_fb ns_sl_a ns_sl_b; do
     # Get the physical interface in this namespace
     case "$ns" in
-        ns_fa) phys=enp1s0 ; veth_i=veth_fa_i ; veth_m=veth_fa ;;
-        ns_fb) phys=enp2s0 ; veth_i=veth_fb_i ; veth_m=veth_fb ;;
-        ns_sl_a) phys=enp3s0 ; veth_i=veth_sl_a_i ; veth_m=veth_sl_a ;;
-        ns_sl_b) phys=enp4s0 ; veth_i=veth_sl_b_i ; veth_m=veth_sl_b ;;
+        ns_fa) phys=ps_ter_a ; veth_i=veth_fa_i ; veth_m=veth_fa ;;
+        ns_fb) phys=ps_ter_b ; veth_i=veth_fb_i ; veth_m=veth_fb ;;
+        ns_sl_a) phys=ps_sl_a ; veth_i=veth_sl_a_i ; veth_m=veth_sl_a ;;
+        ns_sl_b) phys=ps_sl_b ; veth_i=veth_sl_b_i ; veth_m=veth_sl_b ;;
     esac
 
     # Add MASQUERADE if not present
