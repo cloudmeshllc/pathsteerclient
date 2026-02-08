@@ -1,11 +1,6 @@
 #!/bin/bash
 ###############################################################################
 # PathSteer Survivor - Never give up connectivity
-# - Brings up all paths in parallel
-# - Tests and picks fastest
-# - Monitors continuously, switches if better path found
-# - Phones home to controller with all IPs
-# - Never blocks boot, never gives up
 ###############################################################################
 
 LOG="/var/log/pathsteer/survivor.log"
@@ -21,21 +16,35 @@ PHONE_HOME_PORT="8888"
 PATHS=(
     "ns_fa|ps_ter_a|veth_fa|10.201.1.1|10.201.1.2|192.168.0.1"
     "ns_fb|ps_ter_b|veth_fb|10.201.2.1|10.201.2.2|192.168.12.1"
-    "ns_sl_a|ps_sl_a|veth_sl_a|10.201.3.1|10.201.3.2|192.168.2.1"
-    "ns_sl_b|ps_sl_b|veth_sl_b|10.201.4.1|10.201.4.2|100.64.0.1"
+    "ns_sl_a|ps_sl_a|veth_sl_a|10.201.3.1|10.201.3.2|100.64.0.1"
+    "ns_sl_b|ps_sl_b|veth_sl_b|10.201.4.1|10.201.4.2|192.168.2.1"
 )
+
+# Preserve Tailscale connectivity before any route changes
+preserve_tailscale() {
+    # Find current cellular gateway
+    local wwan_gw=$(ip route show dev wwan1 | grep default | awk '{print $3}' | head -1)
+    if [[ -z "$wwan_gw" ]]; then
+        wwan_gw=$(ip -4 addr show wwan1 | grep -oP 'inet \K[\d.]+')
+    fi
+    
+    if [[ -n "$wwan_gw" ]]; then
+        # Route Tailscale CGNAT range through cellular
+        ip route replace 100.64.0.0/10 via "$wwan_gw" dev wwan1 2>/dev/null || \
+        ip route replace 100.64.0.0/10 dev wwan1 2>/dev/null
+        log "Tailscale route preserved via wwan1"
+    fi
+}
 
 # Phone home - POST all IPs to controller
 phone_home() {
     local data="hostname=$(hostname)&time=$(date -Iseconds)"
     
-    # Main namespace IPs (cellular)
     for iface in wwan0 wwan1; do
         ip=$(ip -4 addr show "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+')
         [[ -n "$ip" ]] && data+="&${iface}=${ip}"
     done
     
-    # Namespace IPs
     for path in "${PATHS[@]}"; do
         IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
         ip=$(ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+')
@@ -44,26 +53,21 @@ phone_home() {
         [[ -n "$ipv6" ]] && data+="&${ns}_v6=${ipv6}"
     done
     
-    # Current default path
     data+="&current_path=$(cat /run/pathsteer/current_path 2>/dev/null)"
     
-    # POST to controller (try IPv4 then IPv6)
     curl -s --max-time 5 -X POST -d "$data" "http://${CONTROLLER}:${PHONE_HOME_PORT}/phonehome" 2>/dev/null || true
-    
     log "Phone home sent"
 }
 
-# Bring up a single path (runs in background)
+# Bring up a single path
 bring_up_path() {
     local ns=$1 iface=$2 veth=$3 veth_ip_main=$4 veth_ip_ns=$5 gw_hint=$6
     
     log "[$ns] Starting..."
     
-    # Create namespace if missing
     ip netns add "$ns" 2>/dev/null || true
     ip netns exec "$ns" ip link set lo up 2>/dev/null
     
-    # Create veth if missing
     if ! ip link show "$veth" &>/dev/null; then
         ip link add "$veth" type veth peer name "${veth}_i"
         ip link set "${veth}_i" netns "$ns"
@@ -73,15 +77,13 @@ bring_up_path() {
     ip link set "$veth" up
     ip netns exec "$ns" ip link set "${veth}_i" up 2>/dev/null
     
-    # Move interface to namespace if needed
     if ip link show "$iface" &>/dev/null; then
         ip link set "$iface" netns "$ns"
     fi
     
-    # Bring up interface
     ip netns exec "$ns" ip link set "$iface" up 2>/dev/null || return 1
     
-    # DHCP (non-blocking, retry forever in background)
+    # DHCP retry in background
     (
         while true; do
             if ! ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -q inet; then
@@ -91,10 +93,8 @@ bring_up_path() {
         done
     ) &
     
-    # Wait briefly for first DHCP attempt
     sleep 3
     
-    # Check if we got an IP
     local ip=$(ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+')
     if [[ -z "$ip" ]]; then
         log "[$ns] No IP yet, DHCP continuing in background"
@@ -102,16 +102,15 @@ bring_up_path() {
     fi
     log "[$ns] Got IP: $ip"
     
-    # Set up NAT and forwarding
-    ip netns exec "$ns" iptables -t nat -C POSTROUTING -o "$iface" -j MASQUERADE 2>/dev/null || \
-        ip netns exec "$ns" iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
+    # NAT with correct interface name
+    ip netns exec "$ns" iptables -t nat -F POSTROUTING 2>/dev/null
+    ip netns exec "$ns" iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
     ip netns exec "$ns" sysctl -qw net.ipv4.ip_forward=1
     
     # Disable rp_filter
     sysctl -qw "net.ipv4.conf.${veth}.rp_filter=0" 2>/dev/null
     ip netns exec "$ns" sysctl -qw net.ipv4.conf.all.rp_filter=0 2>/dev/null
     
-    # Add default route in namespace
     local gw=$(ip netns exec "$ns" ip route | grep default | awk '{print $3}')
     [[ -z "$gw" ]] && gw="$gw_hint"
     ip netns exec "$ns" ip route replace default via "$gw" dev "$iface" 2>/dev/null
@@ -133,8 +132,6 @@ set_best_path() {
     
     for path in "${PATHS[@]}"; do
         IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
-        
-        # Check if namespace has connectivity
         local latency=$(test_path "$ns")
         log "[$ns] latency: ${latency}ms"
         
@@ -164,34 +161,31 @@ log "=========================================="
 log "PathSteer Survivor starting"
 log "=========================================="
 
-# Phase 1: Bring up all paths in parallel
+# Preserve Tailscale FIRST
+preserve_tailscale
+
+# Bring up all paths in parallel
 for path in "${PATHS[@]}"; do
     IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
     bring_up_path "$ns" "$iface" "$veth" "$veth_ip_main" "$veth_ip_ns" "$gw" &
 done
 
-# Wait for initial setup (max 15 seconds)
 sleep 15
 
-# Phase 2: Pick best path
 set_best_path
-
-# Phase 3: Phone home immediately
 phone_home
 
-# Phase 4: Monitor loop (every 30 seconds)
+# Monitor loop
 phone_home_counter=0
 while true; do
     sleep 30
     
-    # Phone home every 2 minutes
     ((phone_home_counter++))
     if (( phone_home_counter >= 4 )); then
         phone_home
         phone_home_counter=0
     fi
     
-    # Re-test and switch if better path available
     current=$(cat /run/pathsteer/current_path 2>/dev/null)
     current_latency=$(test_path "$current")
     
@@ -200,12 +194,11 @@ while true; do
         [[ "$ns" == "$current" ]] && continue
         
         latency=$(test_path "$ns")
-        # Switch if new path is 20ms+ faster
         if (( $(echo "$latency < $current_latency - 20" | bc -l 2>/dev/null || echo 0) )); then
             log "Switching from $current (${current_latency}ms) to $ns (${latency}ms)"
             ip route replace default via "$veth_ip_ns" dev "$veth"
             echo "$ns" > /run/pathsteer/current_path
-            phone_home  # Report switch immediately
+            phone_home
             break
         fi
     done
