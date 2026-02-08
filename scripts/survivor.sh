@@ -188,6 +188,7 @@ while true; do
     
     current=$(cat /run/pathsteer/current_path 2>/dev/null)
     current_latency=$(test_path "$current")
+    log "Monitor: current=$current latency=${current_latency}ms"
     
     for path in "${PATHS[@]}"; do
         IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
