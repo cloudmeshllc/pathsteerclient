@@ -20,6 +20,18 @@ PATHS=(
     "ns_sl_b|ps_sl_b|veth_sl_b|10.201.4.1|10.201.4.2|192.168.2.1"
 )
 
+
+# Start SSH forwarders in each namespace
+start_ssh_forwarders() {
+    log "Starting SSH forwarders..."
+    for path in "${PATHS[@]}"; do
+        IFS="|" read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
+        pkill -f "socat.*$ns.*:22" 2>/dev/null || true
+        ip netns exec "$ns" socat TCP4-LISTEN:22,fork,reuseaddr TCP4:${veth_ip_main}:22 2>/dev/null &
+        ip netns exec "$ns" socat TCP6-LISTEN:22,fork,reuseaddr TCP6:[${veth_ip_main}]:22 2>/dev/null &
+        log "[$ns] SSH forwarder started"
+    done
+}
 # Preserve Tailscale connectivity before any route changes
 preserve_tailscale() {
     # Find current cellular gateway
@@ -173,6 +185,7 @@ done
 sleep 15
 
 set_best_path
+start_ssh_forwarders
 phone_home
 
 # Monitor loop
@@ -203,3 +216,4 @@ while true; do
         fi
     done
 done
+
