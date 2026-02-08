@@ -12,7 +12,6 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 CONTROLLER="ctrl-a.pathsteerlabs.com"
 PHONE_HOME_PORT="8888"
 
-# Namespace configs: ns|iface|veth_main|veth_ip_main|veth_ip_ns|gateway_hint
 PATHS=(
     "ns_fa|ps_ter_a|veth_fa|10.201.1.1|10.201.1.2|192.168.0.1"
     "ns_fb|ps_ter_b|veth_fb|10.201.2.1|10.201.2.2|192.168.12.1"
@@ -20,43 +19,35 @@ PATHS=(
     "ns_sl_b|ps_sl_b|veth_sl_b|10.201.4.1|10.201.4.2|192.168.2.1"
 )
 
-
-# Start SSH forwarders in each namespace
 start_ssh_forwarders() {
     log "Starting SSH forwarders..."
     for path in "${PATHS[@]}"; do
-        IFS="|" read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
+        IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
         pkill -f "socat.*$ns.*:22" 2>/dev/null || true
         ip netns exec "$ns" socat TCP4-LISTEN:22,fork,reuseaddr TCP4:${veth_ip_main}:22 2>/dev/null &
         ip netns exec "$ns" socat TCP6-LISTEN:22,fork,reuseaddr TCP6:[${veth_ip_main}]:22 2>/dev/null &
         log "[$ns] SSH forwarder started"
     done
 }
-# Preserve Tailscale connectivity before any route changes
+
 preserve_tailscale() {
-    # Find current cellular gateway
-    local wwan_gw=$(ip route show dev wwan1 | grep default | awk '{print $3}' | head -1)
-    if [[ -z "$wwan_gw" ]]; then
-        wwan_gw=$(ip -4 addr show wwan1 | grep -oP 'inet \K[\d.]+')
-    fi
-    
-    if [[ -n "$wwan_gw" ]]; then
-        # Route Tailscale CGNAT range through cellular
-        ip route replace 100.64.0.0/10 via "$wwan_gw" dev wwan1 2>/dev/null || \
+    if ip link show wwan1 2>/dev/null | grep -q "state UNKNOWN\|state UP"; then
+        ip route replace default dev wwan1 metric 500 2>/dev/null
         ip route replace 100.64.0.0/10 dev wwan1 2>/dev/null
-        log "Tailscale route preserved via wwan1"
+        log "Tailscale route preserved via wwan1 (metric 500)"
+    fi
+    if ip link show wwan0 2>/dev/null | grep -q "state UNKNOWN\|state UP"; then
+        ip route replace default dev wwan0 metric 600 2>/dev/null
+        log "Fallback route via wwan0 (metric 600)"
     fi
 }
 
-# Phone home - POST all IPs to controller
 phone_home() {
     local data="hostname=$(hostname)&time=$(date -Iseconds)"
-    
     for iface in wwan0 wwan1; do
         ip=$(ip -4 addr show "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+')
         [[ -n "$ip" ]] && data+="&${iface}=${ip}"
     done
-    
     for path in "${PATHS[@]}"; do
         IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
         ip=$(ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+')
@@ -64,14 +55,23 @@ phone_home() {
         [[ -n "$ip" ]] && data+="&${ns}_v4=${ip}"
         [[ -n "$ipv6" ]] && data+="&${ns}_v6=${ipv6}"
     done
-    
     data+="&current_path=$(cat /run/pathsteer/current_path 2>/dev/null)"
-    
     curl -s --max-time 5 -X POST -d "$data" "http://${CONTROLLER}:${PHONE_HOME_PORT}/phonehome" 2>/dev/null || true
     log "Phone home sent"
 }
 
-# Bring up a single path
+setup_nat_and_routing() {
+    local ns=$1 iface=$2 veth=$3 gw=$4
+    ip netns exec "$ns" iptables -t nat -F POSTROUTING 2>/dev/null
+    ip netns exec "$ns" iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
+    ip netns exec "$ns" sysctl -qw net.ipv4.ip_forward=1
+    sysctl -qw "net.ipv4.conf.${veth}.rp_filter=0" 2>/dev/null
+    ip netns exec "$ns" sysctl -qw net.ipv4.conf.all.rp_filter=0 2>/dev/null
+    local actual_gw=$(ip netns exec "$ns" ip route | grep default | awk '{print $3}')
+    [[ -z "$actual_gw" ]] && actual_gw="$gw"
+    ip netns exec "$ns" ip route replace default via "$actual_gw" dev "$iface" 2>/dev/null
+}
+
 bring_up_path() {
     local ns=$1 iface=$2 veth=$3 veth_ip_main=$4 veth_ip_ns=$5 gw_hint=$6
     
@@ -95,11 +95,14 @@ bring_up_path() {
     
     ip netns exec "$ns" ip link set "$iface" up 2>/dev/null || return 1
     
-    # DHCP retry in background
+    # DHCP retry in background with NAT setup
     (
         while true; do
             if ! ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -q inet; then
                 ip netns exec "$ns" dhclient -1 "$iface" 2>/dev/null
+            fi
+            if ip netns exec "$ns" ip -4 addr show "$iface" 2>/dev/null | grep -q inet; then
+                setup_nat_and_routing "$ns" "$iface" "$veth" "$gw_hint"
             fi
             sleep 30
         done
@@ -114,31 +117,18 @@ bring_up_path() {
     fi
     log "[$ns] Got IP: $ip"
     
-    # NAT with correct interface name
-    ip netns exec "$ns" iptables -t nat -F POSTROUTING 2>/dev/null
-    ip netns exec "$ns" iptables -t nat -A POSTROUTING -o "$iface" -j MASQUERADE
-    ip netns exec "$ns" sysctl -qw net.ipv4.ip_forward=1
-    
-    # Disable rp_filter
-    sysctl -qw "net.ipv4.conf.${veth}.rp_filter=0" 2>/dev/null
-    ip netns exec "$ns" sysctl -qw net.ipv4.conf.all.rp_filter=0 2>/dev/null
-    
-    local gw=$(ip netns exec "$ns" ip route | grep default | awk '{print $3}')
-    [[ -z "$gw" ]] && gw="$gw_hint"
-    ip netns exec "$ns" ip route replace default via "$gw" dev "$iface" 2>/dev/null
+    setup_nat_and_routing "$ns" "$iface" "$veth" "$gw_hint"
     
     log "[$ns] Ready"
     return 0
 }
 
-# Test a path and return latency in ms (or 9999 if failed)
 test_path() {
     local ns=$1
     local result=$(ip netns exec "$ns" ping -c1 -W2 8.8.8.8 2>/dev/null | grep -oP 'time=\K[\d.]+')
     echo "${result:-9999}"
 }
 
-# Find and set best path
 set_best_path() {
     local best_ns="" best_veth="" best_veth_ip="" best_latency=9999
     
@@ -173,10 +163,8 @@ log "=========================================="
 log "PathSteer Survivor starting"
 log "=========================================="
 
-# Preserve Tailscale FIRST
 preserve_tailscale
 
-# Bring up all paths in parallel
 for path in "${PATHS[@]}"; do
     IFS='|' read -r ns iface veth veth_ip_main veth_ip_ns gw <<< "$path"
     bring_up_path "$ns" "$iface" "$veth" "$veth_ip_main" "$veth_ip_ns" "$gw" &
@@ -188,7 +176,6 @@ set_best_path
 start_ssh_forwarders
 phone_home
 
-# Monitor loop
 phone_home_counter=0
 while true; do
     sleep 30
@@ -216,4 +203,3 @@ while true; do
         fi
     done
 done
-
