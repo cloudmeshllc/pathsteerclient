@@ -266,8 +266,7 @@ def toggle_uplink():
                 json.dump(config, f, indent=2)
             # Write command for daemon
             cmd = 'enable:' + name if new_state else 'disable:' + name
-            with open('/run/pathsteer/command', 'w') as cf:
-                cf.write(cmd)
+            send_command(cmd)
         return jsonify({'name': name, 'enabled': new_state})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
