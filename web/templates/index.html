@@ -1248,7 +1248,11 @@ function getSignalBars(rsrp) {
     return html;
 }
 
+let _uplinkInteractionLock = 0;
+
 function renderUplinks(uplinks) {
+    // Skip re-render if user just clicked (prevents DOM destroy during click)
+    if (Date.now() < _uplinkInteractionLock) return;
     console.log("renderUplinks called with", uplinks.length, "uplinks");
     const container = document.getElementById('uplinks');
     container.innerHTML = '';
@@ -1322,6 +1326,7 @@ function renderUplinks(uplinks) {
         
         const card = document.createElement('div');
         card.className = `uplink-card ${typeClass} ${carrierClass} ${activeClass} ${availClass}`;
+        card.setAttribute('data-name', u.name);
         if (nextBest[u.name]) {
             card.setAttribute('data-rank', nextBest[u.name].rank);
             card.setAttribute('data-prob', nextBest[u.name].prob + '%');
@@ -1469,6 +1474,7 @@ async function setMode(mode) {
 }
 
 async function forceSwitch(uplink) {
+    _uplinkInteractionLock = Date.now() + 2000;
     await fetch('/api/control/force', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1478,6 +1484,7 @@ async function forceSwitch(uplink) {
 }
 
 async function forceFail(uplink) {
+    _uplinkInteractionLock = Date.now() + 2000;
     console.log("forceFail called:", uplink);
     await fetch('/api/control/fail', {
         method: 'POST',
@@ -1640,6 +1647,7 @@ function updateStats(s) {
 
 // Toggle uplink enabled
 async function toggleUplink(name) {
+    _uplinkInteractionLock = Date.now() + 2000;
     const resp = await fetch('/api/uplink/toggle', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
