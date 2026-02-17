@@ -1,0 +1,15 @@
+{
+  "rtt_spike_pct": 50,
+  "loss_threshold_pct": 10,
+  "rsrp_drop_db": 10,
+  "consec_fail_threshold": 3,
+  "probe_interval_sec": 1,
+  "preroll_ms": 200,
+  "min_hold_sec": 10,
+  "clean_exit_sec": 5,
+  "controller_a": "10.42.0.1",
+  "controller_b": "10.42.0.2",
+  "c8000_enabled": false,
+  "gps_sample_interval": 5,
+  "data_retention_days": 14
+}
