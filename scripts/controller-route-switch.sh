@@ -1,8 +1,9 @@
 #!/bin/bash
 ###############################################################################
-# controller-route-switch.sh — Move /28 return route on controllers
+# controller-route-switch.sh — Move /28 return route in controller ns_svc
 #
-# Called by pathsteerd after successful ip rule actuation.
+# With per-tunnel namespaces, just change the route in ns_svc.
+# No more AllowedIPs juggling.
 # Usage: controller-route-switch.sh <uplink_name>
 ###############################################################################
 UPLINK="$1"
@@ -11,75 +12,37 @@ CTRL_A="pathsteer@104.204.136.13"
 CTRL_B="pathsteer@104.204.136.14"
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no"
 
-# Map edge uplink to controller WG interface name
-declare -A WG_MAP=(
-    [cell_a]="wg-cell_a"
-    [cell_b]="wg-cell_b"
-    [sl_a]="wg-sl_a"
-    [sl_b]="wg-sl_b"
-    [fa]="wg-fa"
-    [fb]="wg-fb"
+# Map edge uplink to controller ns_svc veth + gateway
+declare -A SVC_DEV=(
+    [fa]="svc_fa"
+    [fb]="svc_fb"
+    [sl_a]="svc_sl_a"
+    [sl_b]="svc_sl_b"
+    [cell_a]="svc_ca"
+    [cell_b]="svc_cb"
+)
+declare -A SVC_GW=(
+    [fa]="10.203.1.2"
+    [fb]="10.203.2.2"
+    [sl_a]="10.203.3.2"
+    [sl_b]="10.203.4.2"
+    [cell_a]="10.203.5.2"
+    [cell_b]="10.203.6.2"
 )
 
-WG_IFACE="${WG_MAP[$UPLINK]}"
-if [[ -z "$WG_IFACE" ]]; then
+DEV="${SVC_DEV[$UPLINK]}"
+GW="${SVC_GW[$UPLINK]}"
+
+if [[ -z "$DEV" ]]; then
     echo "ERROR: unknown uplink '$UPLINK'" >&2
     exit 1
 fi
 
-# Map edge uplink to controller WG peer edge-side IP
-declare -A PEER_MAP_A=(
-    [cell_a]="10.200.1.2/32"
-    [cell_b]="10.200.2.2/32"
-    [sl_a]="10.200.3.2/32"
-    [sl_b]="10.200.4.2/32"
-    [fa]="10.200.9.2/32"
-    [fb]="10.200.11.2/32"
-)
-declare -A PEER_MAP_B=(
-    [cell_a]="10.200.5.2/32"
-    [cell_b]="10.200.6.2/32"
-    [sl_a]="10.200.7.2/32"
-    [sl_b]="10.200.8.2/32"
-    [fa]="10.200.10.2/32"
-    [fb]="10.200.12.2/32"
-)
-
-EDGE_KEY="FbaOGOhHP5vgSPzH2JszteuNtAJfxSsDfuFdAPCatTs="
-
-# Switch controller A
-ssh $SSH_OPTS $CTRL_A "sudo sh -c '
-    # Move allowed-ips: add /28 to target, remove from others
-    for iface in wg-cell_a wg-cell_b wg-sl_a wg-sl_b wg-fa wg-fb; do
-        if [ \"\$iface\" = \"${WG_IFACE}\" ]; then
-            continue
-        fi
-        # Get current peer IP for this interface
-        PEER_IP=\$(wg show \$iface allowed-ips 2>/dev/null | awk \"{print \\\$2}\" | grep -v ${SERVICE_PREFIX} | head -1)
-        if [ -n \"\$PEER_IP\" ]; then
-            wg set \$iface peer ${EDGE_KEY} allowed-ips \$PEER_IP 2>/dev/null
-        fi
-    done
-    # Set target tunnel: peer IP + service prefix
-    wg set ${WG_IFACE} peer ${EDGE_KEY} allowed-ips ${PEER_MAP_A[$UPLINK]},${SERVICE_PREFIX}
-    # Move route
-    ip route replace ${SERVICE_PREFIX} dev ${WG_IFACE}
-'" &
+# Switch controller A — just one route replace in ns_svc
+ssh $SSH_OPTS $CTRL_A "sudo ip netns exec ns_svc ip route replace ${SERVICE_PREFIX} via ${GW} dev ${DEV}" &
 
 # Switch controller B
-ssh $SSH_OPTS $CTRL_B "sudo sh -c '
-    for iface in wg-cell_a wg-cell_b wg-sl_a wg-sl_b wg-fa wg-fb; do
-        if [ \"\$iface\" = \"${WG_IFACE}\" ]; then
-            continue
-        fi
-        PEER_IP=\$(wg show \$iface allowed-ips 2>/dev/null | awk \"{print \\\$2}\" | grep -v ${SERVICE_PREFIX} | head -1)
-        if [ -n \"\$PEER_IP\" ]; then
-            wg set \$iface peer ${EDGE_KEY} allowed-ips \$PEER_IP 2>/dev/null
-        fi
-    done
-    wg set ${WG_IFACE} peer ${EDGE_KEY} allowed-ips ${PEER_MAP_B[$UPLINK]},${SERVICE_PREFIX}
-    ip route replace ${SERVICE_PREFIX} dev ${WG_IFACE}
-'" &
+ssh $SSH_OPTS $CTRL_B "sudo ip netns exec ns_svc ip route replace ${SERVICE_PREFIX} via ${GW} dev ${DEV}" &
 
 wait
-echo "Route switched to ${WG_IFACE} on both controllers"
+echo "Route switched to ${DEV} (${UPLINK}) on both controllers"
