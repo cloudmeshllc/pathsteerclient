@@ -1,0 +1,222 @@
+
+PathSteer Guardian — Traffic Duplication Flow (nftables dup in ns_vip)
+=====================================================================
+
+NORMAL MODE (no duplication):
+═════════════════════════════
+
+  Application on .50
+       │
+       ▼
+  ns_vip lo: 104.204.136.50/28
+       │
+       │ ip route: default via 10.201.10.6 dev vip_fb    ← daemon selected fb
+       │
+       ▼
+  vip_fb (ns_vip side, 10.201.10.5/30)
+       │
+       │ veth pair
+       ▼
+  vip_fb_i (ns_fb side, 10.201.10.6/30)
+       │
+       │ ip rule 50: from 104.204.136.48/28 lookup pathsteer
+       │ table pathsteer: default dev wg-fb-cA
+       ▼
+  wg-fb-cA encrypts
+  outer: 192.168.12.79:xxxxx → 104.204.136.13:51830
+       │
+       │ ip route main: default via 192.168.12.1 dev ps_ter_b
+       ▼
+  ps_ter_b (ATT Fiber physical) → Dallas → Controller A
+       │
+       ▼
+  Controller A decrypts on wg-fb
+  forwards 104.204.136.50 → 8.8.8.8 via ens160 → router → internet
+
+
+DUPLICATION MODE (nftables dup active):
+═══════════════════════════════════════
+
+  Application on .50
+       │
+       ▼
+  ns_vip lo: 104.204.136.50/28
+       │
+       │ ip route: default via 10.201.10.6 dev vip_fb    ← still fb primary
+       │
+       ▼
+  ROUTING DECISION: packet destined for vip_fb (egress)
+       │
+       │ nftables hook: postrouting priority 0
+       │ table dup_table, chain postrouting:
+       │   rule: oif "vip_fb" dup to 10.201.10.2 device "vip_fa"
+       │
+       │ ACTION:
+       │   1. ORIGINAL packet continues out vip_fb (unchanged)
+       │   2. COPY of packet sent to gateway 10.201.10.2 via vip_fa
+       │
+       ├──────────────────────────────┐
+       │ ORIGINAL                     │ COPY
+       ▼                              ▼
+  vip_fb                          vip_fa
+  (10.201.10.5/30)                (10.201.10.1/30)
+       │                              │
+       │ veth                         │ veth
+       ▼                              ▼
+  vip_fb_i (ns_fb)                vip_fa_i (ns_fa)
+  10.201.10.6/30                  10.201.10.2/30
+       │                              │
+       │ rule 50: from /28            │ rule 50: from /28
+       │ lookup pathsteer             │ lookup pathsteer
+       │                              │
+       │ table pathsteer:             │ table pathsteer:
+       │ default dev wg-fb-cA         │ default dev wg-fa-cA
+       ▼                              ▼
+  wg-fb-cA encrypts               wg-fa-cA encrypts
+  inner: .50 → 8.8.8.8            inner: .50 → 8.8.8.8
+  outer: 192.168.12.79            outer: 192.168.0.167
+       → .13:51830                     → .13:51829
+       │                              │
+       │ main table:                  │ main table:
+       │ default via                  │ default via
+       │ 192.168.12.1                 │ 192.168.0.1
+       │ dev ps_ter_b                 │ dev ps_ter_a
+       ▼                              ▼
+  ps_ter_b                        ps_ter_a
+  (ATT Fiber)                     (Google Fiber)
+       │                              │
+       │                              │
+       ▼                              ▼
+  ATT → Dallas                    Google → Dallas
+  28ms                            7ms (when peering OK)
+       │                              │
+       ▼                              ▼
+  ┌────────────────────────────────────────────────┐
+  │              CONTROLLER A (.13)                 │
+  │                                                │
+  │  wg-fb decrypts     wg-fa decrypts             │
+  │  inner: .50→8.8.8.8 inner: .50→8.8.8.8        │
+  │                                                │
+  │  BOTH copies arrive. Kernel forwards BOTH.     │
+  │  ip route: .48/28 dev wg-fb (active return)    │
+  │                                                │
+  │  ip_forward=1 → ens160 → router → internet     │
+  │                                                │
+  │  8.8.8.8 gets TWO identical ICMP requests.     │
+  │  Sends TWO replies to .50.                     │
+  │                                                │
+  │  Router returns .50 to .13 (static route)      │
+  │                                                │
+  │  .48/28 dev wg-fb → return via ATT Fiber ONLY  │
+  │  (only ONE reply reaches the edge)             │
+  └────────────────────────────────────────────────┘
+
+
+RETURN PATH (only through active controller route):
+═══════════════════════════════════════════════════
+
+  8.8.8.8 → 104.204.136.50
+       │
+       ▼
+  Router: .48/28 → .13
+       │
+       ▼
+  Controller A: .48/28 dev wg-fb   ← controller route = active path
+       │
+       ▼
+  wg-fb encrypts reply → ATT Fiber → ps_ter_b (ns_fb)
+       │
+       ▼
+  wg-fb-cA decrypts: 8.8.8.8 → 104.204.136.50
+       │
+       │ ip route: 104.204.136.48/28 via 10.201.10.5 dev vip_fb_i
+       ▼
+  vip_fb_i → vip_fb (ns_vip)
+       │
+       ▼
+  ns_vip lo receives on 104.204.136.50
+  Application gets ONE clean reply
+
+
+SWITCH EVENT WITH DUPLICATION (zero packet loss):
+═════════════════════════════════════════════════
+
+  TIME
+   │
+   │  t=-500ms   Daemon detects fb RTT trending up:
+   │              28ms → 32ms → 38ms → 45ms
+   │              TRIGGER_RTT_STEP fires
+   │
+   │  t=0        FAST PATH: dup_enable()
+   │              nft add rule ... oif vip_fb dup to 10.201.10.2 device vip_fa
+   │              
+   │              ► ALL packets now flow through BOTH paths
+   │              ► fb (degrading) + fa (backup)
+   │              ► ~1ms to install nft rule
+   │
+   │  t=0-100ms  DUP_SETTLE period
+   │              Both paths carrying identical traffic
+   │              Daemon evaluates which path is better
+   │              fa: 7ms, 0% loss
+   │              fb: 45ms climbing, 2% loss
+   │
+   │  t=100ms    SLOW PATH: execute_switch(fa)
+   │              ip netns exec ns_vip ip route replace default
+   │                via 10.201.10.2 dev vip_fa
+   │              
+   │              ► Outbound now primary through fa
+   │              ► dup rule still active (oif vip_fb no longer matches)
+   │              ► Duplication naturally stops (no traffic on vip_fb)
+   │
+   │  t=150ms    controller-route-switch.sh fa (async)
+   │              Both controllers: .48/28 dev wg-fa
+   │              
+   │              ► Return traffic now via fa too
+   │
+   │  t=200ms    dup_disable()
+   │              nft flush chain postrouting
+   │              
+   │              ► Clean single-path through fa
+   │
+   │  RESULT:    ZERO packet loss during switch
+   │             Duplication bridged the gap
+   │             Active sessions never saw interruption
+   ▼
+
+
+DAEMON dup_enable() IMPLEMENTATION:
+═══════════════════════════════════
+
+  dup_enable(active_uplink_idx, backup_uplink_idx):
+    
+    active_dev = VIP_DEVS[active_uplink_idx]    // e.g. "vip_fb"
+    backup_dev = VIP_DEVS[backup_uplink_idx]    // e.g. "vip_fa"
+    backup_gw  = VIP_GWS[backup_uplink_idx]     // e.g. "10.201.10.2"
+    
+    cmd = sprintf(
+      "ip netns exec ns_vip nft add table ip dup_table; "
+      "ip netns exec ns_vip nft flush chain ip dup_table postrouting 2>/dev/null; "
+      "ip netns exec ns_vip nft 'add chain ip dup_table postrouting "
+        "{ type filter hook postrouting priority 0 ; }'; "
+      "ip netns exec ns_vip nft add rule ip dup_table postrouting "
+        "oif %s dup to %s device %s",
+      active_dev, backup_gw, backup_dev
+    )
+    
+    system(cmd)
+
+  dup_disable():
+    
+    system("ip netns exec ns_vip nft delete table ip dup_table 2>/dev/null")
+
+
+NFT RULE IN ns_vip (when active):
+═════════════════════════════════
+
+  table ip dup_table {
+      chain postrouting {
+          type filter hook postrouting priority filter; policy accept;
+          oif "vip_fb" dup to 10.201.10.2 device "vip_fa"
+      }
+  }
+
