@@ -184,3 +184,9 @@ echo "ns_vip veths: $(ip netns exec ns_vip ip link show | grep -c UP) UP"
 ###############################################################################
 /opt/pathsteer/scripts/controller-route-switch.sh fa 2>/dev/null || true
 echo "Controller initial route set to fa"
+
+###############################################################################
+# 8. Set initial controller route to match ns_vip default (fa)
+###############################################################################
+/opt/pathsteer/scripts/controller-route-switch.sh fa 2>/dev/null || true
+echo "Controller initial route set to fa"
