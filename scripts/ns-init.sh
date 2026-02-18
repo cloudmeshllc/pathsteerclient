@@ -9,6 +9,23 @@ mkdir -p /var/log/pathsteer
 exec > >(tee -a "$LOG") 2>&1
 echo "=== ns-init.sh starting $(date) ==="
 
+# Create cellular namespaces (not created by pathsteer-netns.service)
+for ns in ns_cell_a ns_cell_b; do
+    ip netns add $ns 2>/dev/null || true
+    ip netns exec $ns ip link set lo up
+    ip netns exec $ns sysctl -qw net.ipv4.ip_forward=1
+    ip netns exec $ns sysctl -qw net.ipv4.conf.all.rp_filter=0
+done
+echo "Cellular namespaces created"
+
+# DHCP on physical interfaces (leases expire across reboot)
+ip netns exec ns_fa dhclient -nw ps_ter_a 2>/dev/null || true
+ip netns exec ns_fb dhclient -nw ps_ter_b 2>/dev/null || true
+ip netns exec ns_sl_a dhclient -nw ps_sl_a 2>/dev/null || true
+ip netns exec ns_sl_b dhclient -nw ps_sl_b 2>/dev/null || true
+echo "DHCP requested, waiting..."
+sleep 5
+
 # Wait for path namespaces to be ready
 for ns in ns_fa ns_fb ns_sl_a ns_sl_b ns_cell_a ns_cell_b; do
     for i in $(seq 1 30); do
@@ -27,7 +44,52 @@ ip netns exec ns_vip ip addr add 104.204.136.50/28 dev lo 2>/dev/null || true
 ip netns exec ns_vip sysctl -qw net.ipv4.ip_forward=1
 
 ###############################################################################
-# 2. ns_vip <-> path namespace veth pairs
+# 2a. Cellular veth pairs (main <-> cell namespaces) and WG tunnels
+###############################################################################
+# Stop cell WG in main namespace (old service puts them here)
+for tun in wg-ca-cA wg-ca-cB wg-cb-cA wg-cb-cB; do
+    wg-quick down $tun 2>/dev/null || true
+done
+
+# Cell A veth pair
+ip link del veth_cell_a 2>/dev/null || true
+ip link add veth_cell_a type veth peer name veth_cell_a_i
+ip addr add 10.201.5.1/30 dev veth_cell_a 2>/dev/null || true
+ip link set veth_cell_a up
+ip link set veth_cell_a_i netns ns_cell_a
+ip netns exec ns_cell_a ip addr add 10.201.5.2/30 dev veth_cell_a_i 2>/dev/null || true
+ip netns exec ns_cell_a ip link set veth_cell_a_i up
+
+# Cell B veth pair
+ip link del veth_cell_b 2>/dev/null || true
+ip link add veth_cell_b type veth peer name veth_cell_b_i
+ip addr add 10.201.6.1/30 dev veth_cell_b 2>/dev/null || true
+ip link set veth_cell_b up
+ip link set veth_cell_b_i netns ns_cell_b
+ip netns exec ns_cell_b ip addr add 10.201.6.2/30 dev veth_cell_b_i 2>/dev/null || true
+ip netns exec ns_cell_b ip link set veth_cell_b_i up
+echo "Cellular veth pairs created"
+
+# Bring WG tunnels up INSIDE cell namespaces
+ip netns exec ns_cell_a wg-quick up wg-ca-cA 2>/dev/null || true
+ip netns exec ns_cell_a wg-quick up wg-ca-cB 2>/dev/null || true
+ip netns exec ns_cell_b wg-quick up wg-cb-cA 2>/dev/null || true
+ip netns exec ns_cell_b wg-quick up wg-cb-cB 2>/dev/null || true
+echo "Cellular WG tunnels up in namespaces"
+
+# NAT for cellular in main namespace
+iptables-legacy -t nat -C POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE 2>/dev/null ||     iptables-legacy -t nat -A POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE
+iptables-legacy -t nat -C POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE 2>/dev/null ||     iptables-legacy -t nat -A POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE
+
+# Main namespace ip rules for cellular NAT return
+ip rule del from 10.201.5.0/30 lookup raw_wwan0 priority 80 2>/dev/null || true
+ip rule add from 10.201.5.0/30 lookup raw_wwan0 priority 80
+ip rule del from 10.201.6.0/30 lookup raw_wwan1 priority 81 2>/dev/null || true
+ip rule add from 10.201.6.0/30 lookup raw_wwan1 priority 81
+echo "Cellular NAT and rules configured"
+
+###############################################################################
+# 2b. ns_vip <-> path namespace veth pairs
 ###############################################################################
 for pair in "fa 10.201.10.1 10.201.10.2 ns_fa" \
             "fb 10.201.10.5 10.201.10.6 ns_fb" \
@@ -116,3 +178,9 @@ ip netns exec ns_vip ip route replace default via 10.201.10.2 dev vip_fa
 echo "=== ns-init.sh complete $(date) ==="
 echo "ns_vip VIP: $(ip netns exec ns_vip ip addr show lo | grep 104.204)"
 echo "ns_vip veths: $(ip netns exec ns_vip ip link show | grep -c UP) UP"
+
+###############################################################################
+# 8. Set initial controller route to match ns_vip default (fa)
+###############################################################################
+/opt/pathsteer/scripts/controller-route-switch.sh fa 2>/dev/null || true
+echo "Controller initial route set to fa"
