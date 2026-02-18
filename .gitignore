@@ -1,10 +1,6 @@
 *.o
-pathsteerd
-dedupe
-*.pyc
+*.bak
+backups/
+data/
 __pycache__/
-privatekey
-*.key
-*.db
-*.pcap
-*.jsonl
+bin/
