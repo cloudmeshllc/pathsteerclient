@@ -1152,8 +1152,7 @@ static void uplink_poll(uplink_t* u) {
     
     /* Record in history */
     int idx = u->history_idx % HISTORY_SIZE;
-    /* Apply chaos to history so tripwire sees it */
-    u->history[idx].rtt_ms = rtt + u->chaos_rtt + (u->chaos_jitter * ((double)rand()/RAND_MAX - 0.5) * 2);
+    u->history[idx].rtt_ms = rtt;
     u->history[idx].success = (rtt > 0);
     u->history[idx].timestamp_us = start;
     u->history_idx++;
