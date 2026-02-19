@@ -1331,24 +1331,23 @@ static void starlink_poll(uplink_t* u) {
 static void gps_poll(void) {
     if (!g_config.gps_enabled) return;
     
-    FILE* fp = popen("gpspipe -w -n 1 2>/dev/null | grep -m1 TPV", "r");
+    FILE* fp = fopen("/run/pathsteer/gps.json", "r");
     if (!fp) return;
     
     char buf[1024];
     if (fgets(buf, sizeof(buf), fp)) {
         char* lat = strstr(buf, "\"lat\":");
         char* lon = strstr(buf, "\"lon\":");
-        char* spd = strstr(buf, "\"speed\":");
-        char* hdg = strstr(buf, "\"track\":");
+        char* spd = strstr(buf, "\"speed_mph\":");
+        char* fix = strstr(buf, "\"fix\": true");
         
         if (lat) g_gps.latitude = atof(lat + 6);
         if (lon) g_gps.longitude = atof(lon + 6);
-        if (spd) g_gps.speed_mps = atof(spd + 8);
-        if (hdg) g_gps.heading = atof(hdg + 8);
-        g_gps.valid = (lat && lon);
+        if (spd) g_gps.speed_mps = atof(spd + 13) / 2.237;
+        g_gps.valid = (fix != NULL && lat && lon);
         g_gps.timestamp_us = now_us();
     }
-    pclose(fp);
+    fclose(fp);
 }
 
 /*=============================================================================
