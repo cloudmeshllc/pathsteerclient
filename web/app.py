@@ -45,6 +45,41 @@ def get_config():
     except:
         return {}
 
+
+# Throughput tracking
+_prev_bytes = {}
+_prev_time = 0
+
+def get_throughput():
+    global _prev_bytes, _prev_time
+    import subprocess
+    now = time.time()
+    try:
+        out = subprocess.check_output(
+            ["ip", "netns", "exec", "ns_vip", "cat", "/proc/net/dev"],
+            text=True, timeout=1)
+    except:
+        return 0, 0
+    curr = {}
+    for line in out.strip().split("\n"):
+        if ":" not in line or "face" in line:
+            continue
+        iface, data = line.split(":", 1)
+        iface = iface.strip()
+        if iface.startswith("vip_"):
+            fields = data.split()
+            curr[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
+    total_rx = sum(v["rx"] for v in curr.values())
+    total_tx = sum(v["tx"] for v in curr.values())
+    dt = now - _prev_time if _prev_time > 0 else 1
+    prev_rx = sum(v.get("rx", 0) for v in _prev_bytes.values())
+    prev_tx = sum(v.get("tx", 0) for v in _prev_bytes.values())
+    down_mbps = ((total_rx - prev_rx) * 8 / dt / 1000000) if _prev_time > 0 else 0
+    up_mbps = ((total_tx - prev_tx) * 8 / dt / 1000000) if _prev_time > 0 else 0
+    _prev_bytes = curr
+    _prev_time = now
+    return max(0, round(down_mbps, 2)), max(0, round(up_mbps, 2))
+
 def get_status():
     """Read current status from daemon"""
     try:
@@ -53,6 +88,9 @@ def get_status():
             # Add config info
             config = get_config()
             status['node_id'] = config.get('node', {}).get('id', 'unknown')
+            down, up = get_throughput()
+            status["throughput_down_mbps"] = down
+            status["throughput_up_mbps"] = up
             status['topology_mode'] = config.get('topology_mode', 'chaos')
             # Merge GPS data
             try:
