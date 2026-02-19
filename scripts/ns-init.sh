@@ -18,6 +18,14 @@ for ns in ns_cell_a ns_cell_b; do
 done
 echo "Cellular namespaces created"
 
+###############################################################################
+# 1b. Main namespace default route (cellular fallback)
+###############################################################################
+ip route del default 2>/dev/null || true
+ip route add default dev wwan0 metric 100
+ip route add default dev wwan1 metric 200
+echo "Main default route set (wwan0 primary, wwan1 backup)"
+
 # DHCP on physical interfaces (leases expire across reboot)
 ip netns exec ns_fa dhclient -nw ps_ter_a 2>/dev/null || true
 ip netns exec ns_fb dhclient -nw ps_ter_b 2>/dev/null || true
