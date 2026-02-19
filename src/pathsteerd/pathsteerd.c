@@ -107,8 +107,8 @@
  * CLEAN_EXIT: Need this many seconds of "clean" before exiting protection
  */
 #define DEFAULT_PREROLL_MS          500
-#define DEFAULT_MIN_HOLD_SEC        8
-#define DEFAULT_CLEAN_EXIT_SEC      5
+#define DEFAULT_MIN_HOLD_SEC        3
+#define DEFAULT_CLEAN_EXIT_SEC      2
 
 /* Risk output interval (how often prediction engine runs) */
 #define RISK_INTERVAL_MS            250
@@ -867,7 +867,7 @@ static void slowpath_arbitrate(void) {
     }
     
     /* Already switched this window? */
-    if (g_status.switches_this_window >= 1) {
+    if (g_status.switches_this_window >= 3) {
         g_status.flap_suppressed = true;
         return;
     }
