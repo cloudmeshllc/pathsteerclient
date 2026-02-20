@@ -52,7 +52,7 @@ echo "Cellular namespaces created"
 ###############################################################################
 ip netns add ns_vip 2>/dev/null || true
 ip netns exec ns_vip ip link set lo up
-ip netns exec ns_vip ip addr add 104.204.136.50/28 dev lo 2>/dev/null || true
+ip netns exec ns_vip ip addr add 104.204.136.50/32 dev lo 2>/dev/null || true
 ip netns exec ns_vip sysctl -qw net.ipv4.ip_forward=1
 echo "ns_vip created with 104.204.136.50/28"
 
@@ -219,9 +219,16 @@ ip rule add fwmark 100 lookup service priority 80
 ip route replace default via 10.201.1.2 dev veth_fa table service
 ip route replace 104.204.136.48/28 via 10.201.1.2 dev veth_fa table service
 
-# SNAT client traffic to VIP (temporary until IPv6)
-iptables-legacy -t nat -D POSTROUTING -s 104.204.136.48/28 -o veth_fa -j SNAT --to-source 104.204.136.50 2>/dev/null || true
-iptables-legacy -t nat -A POSTROUTING -s 104.204.136.48/28 -o veth_fa -j SNAT --to-source 104.204.136.50
+# NO SNAT — pure routing via vip_wifi veth for return traffic
+ip link del vip_wifi 2>/dev/null || true
+ip link add vip_wifi type veth peer name vip_wifi_i
+ip addr add 10.201.10.25/30 dev vip_wifi 2>/dev/null || true
+ip link set vip_wifi up
+ip link set vip_wifi_i netns ns_vip
+ip netns exec ns_vip ip addr add 10.201.10.26/30 dev vip_wifi_i 2>/dev/null || true
+ip netns exec ns_vip ip link set vip_wifi_i up
+ip netns exec ns_vip ip route replace 104.204.136.48/28 via 10.201.10.25 dev vip_wifi_i
+ip route flush cache
 
 # Accept WiFi client traffic
 iptables -D INPUT -i wlp7s0 -j ACCEPT 2>/dev/null || true
@@ -231,7 +238,7 @@ iptables -I FORWARD 1 -i wlp7s0 -j ACCEPT
 iptables -D FORWARD -o wlp7s0 -j ACCEPT 2>/dev/null || true
 iptables -I FORWARD 1 -o wlp7s0 -j ACCEPT
 
-echo "WiFi routing configured (SNAT to .50, fwmark 100 -> table service)"
+echo "WiFi routing configured (NO NAT, vip_wifi veth, fwmark 100 -> table service)"
 
 ###############################################################################
 # 12. Start hostapd for WiFi AP
