@@ -2,7 +2,7 @@
 # PathSteer Guardian — ns_vip Layer Initialization
 # Adds ns_vip namespace and veth pairs to existing path namespaces.
 # Runs AFTER pathsteer-netns.service and pathsteer-*-tunnels.service
-# Version: 2026-02-20 (controller ns restructure + Tailscale fix)
+# Version: 2026-02-17
 
 LOG="/var/log/pathsteer/ns-vip-init.log"
 mkdir -p /var/log/pathsteer
@@ -25,15 +25,6 @@ ip route del default 2>/dev/null || true
 ip route add default dev wwan0 metric 100
 ip route add default dev wwan1 metric 200
 echo "Main default route set (wwan0 primary, wwan1 backup)"
-
-###############################################################################
-# 1c. Tailscale routing fix — ensure CGNAT range goes through tailscale0
-#     Tailscale's rule 5 sends 100.64.0.0/10 to main table, but main's
-#     default (wwan0) would swallow it. This explicit route fixes that.
-###############################################################################
-ip route add 100.64.0.0/10 dev tailscale0 table main 2>/dev/null || true
-ip route flush cache
-echo "Tailscale CGNAT route fixed"
 
 # DHCP on physical interfaces (leases expire across reboot)
 ip netns exec ns_fa dhclient -nw ps_ter_a 2>/dev/null || true
@@ -95,10 +86,8 @@ ip netns exec ns_cell_b wg-quick up wg-cb-cB 2>/dev/null || true
 echo "Cellular WG tunnels up in namespaces"
 
 # NAT for cellular in main namespace
-iptables-legacy -t nat -C POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE 2>/dev/null || \
-    iptables-legacy -t nat -A POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE
-iptables-legacy -t nat -C POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE 2>/dev/null || \
-    iptables-legacy -t nat -A POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE
+iptables-legacy -t nat -C POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE 2>/dev/null ||     iptables-legacy -t nat -A POSTROUTING -s 10.201.5.0/30 -o wwan0 -j MASQUERADE
+iptables-legacy -t nat -C POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE 2>/dev/null ||     iptables-legacy -t nat -A POSTROUTING -s 10.201.6.0/30 -o wwan1 -j MASQUERADE
 
 # Main namespace ip rules for cellular NAT return
 ip rule del from 10.201.5.0/30 lookup raw_wwan0 priority 80 2>/dev/null || true
@@ -194,12 +183,18 @@ done
 ###############################################################################
 ip netns exec ns_vip ip route replace default via 10.201.10.2 dev vip_fa
 
+echo "=== ns-init.sh complete $(date) ==="
+echo "ns_vip VIP: $(ip netns exec ns_vip ip addr show lo | grep 104.204)"
+echo "ns_vip veths: $(ip netns exec ns_vip ip link show | grep -c UP) UP"
+
 ###############################################################################
 # 8. Set initial controller route to match ns_vip default (fa)
 ###############################################################################
 /opt/pathsteer/scripts/controller-route-switch.sh fa 2>/dev/null || true
 echo "Controller initial route set to fa"
 
-echo "=== ns-init.sh complete $(date) ==="
-echo "ns_vip VIP: $(ip netns exec ns_vip ip addr show lo | grep 104.204)"
-echo "ns_vip veths: $(ip netns exec ns_vip ip link show | grep -c UP) UP"
+###############################################################################
+# 8. Set initial controller route to match ns_vip default (fa)
+###############################################################################
+/opt/pathsteer/scripts/controller-route-switch.sh fa 2>/dev/null || true
+echo "Controller initial route set to fa"
