@@ -1058,13 +1058,36 @@
         
         <h2 style="margin-top:10px">Remote Targets</h2>
         <div class="targets-panel">
-            <div class="target-row">
-                <span>Voice (SIP):</span>
-                <span class="target-status" id="target-voice">--</span>
+            <div class="target-row" style="cursor:pointer" onclick="flowFloat()">
+                <span>Flows: 🔍</span>
+                <span class="target-status" id="target-voice"><span id="flow-count" style="color:var(--green)">0</span> active</span>
             </div>
-            <div class="target-row">
-                <span>LLM:</span>
-                <span class="target-status offline" id="target-llm">Not configured</span>
+            <div style="font-size:8px;color:var(--muted)">
+                <span>SIP: <span id="sip-count" style="color:var(--blue)">0</span></span>
+                <span style="margin-left:6px">Failovers: <span id="flow-failovers" style="color:var(--yellow)">0</span></span>
+            </div>
+            </div>
+            <div id="llm-panel" style="margin-top:5px;padding:5px;background:var(--bg);border-radius:4px">
+                <div class="target-row">
+                    <span style="cursor:pointer" onclick="llmFloat()">LLM: 🔍</span>
+                    <span class="target-status" id="target-llm" style="color:var(--muted)">Stopped</span>
+                </div>
+                <input type="text" id="llm-prompt" value="Write a poem about network resilience" style="width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);padding:4px;font-size:9px;margin:4px 0;font-family:inherit;border-radius:3px">
+                <div style="display:flex;gap:4px;margin:3px 0">
+                    <select id="llm-loops" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:8px;font-family:inherit;padding:2px">
+                        <option value="0">Continuous</option>
+                        <option value="5">5 loops</option>
+                        <option value="10">10 loops</option>
+                        <option value="50">50 loops</option>
+                        <option value="100">100 loops</option>
+                    </select>
+                    <button id="llm-start-btn" onclick="llmStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:3px;font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px;font-weight:bold">START</button>
+                    <button onclick="llmStop()" style="flex:1;background:var(--red);color:white;border:none;padding:3px;font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px;font-weight:bold">STOP</button>
+                </div>
+                <div style="font-size:8px;color:var(--muted);margin-top:3px">
+                    <div>Tokens/s: <span id="llm-tps" style="color:var(--blue)">0</span> | Total: <span id="llm-total" style="color:var(--green)">0</span> | Reqs: <span id="llm-reqs" style="color:var(--text)">0</span> | Err: <span id="llm-errs" style="color:var(--red)">0</span></div>
+                    <div style="margin-top:2px;color:var(--muted);max-height:80px;overflow-y:auto;line-height:1.4;padding:3px;background:var(--card);border-radius:2px;margin-top:3px" id="llm-response" onclick="llmFloat()" style="cursor:pointer" title="Click to expand">--</div>
+                </div>
             </div>
         </div>
         
@@ -1593,6 +1616,17 @@ function checkStateChanges(s) {
     }
     if (prevMode !== s.mode && prevMode !== null) addLogEntry("info", `Mode changed to ${s.mode}`, gps);
     if (prevActive !== s.active_uplink && prevActive !== null) addLogEntry("switch", `Active uplink: ${prevActive} → ${s.active_uplink}`, gps);
+    // LLM failover savings tracking
+    if (prevActive !== s.active_uplink && prevActive !== null) {
+        fetch("/api/llm/status").then(r=>r.json()).then(d=>{
+            if(d.running && d.total_tokens > 0) {
+                let sessionValue = d.total_tokens * llmCostPerToken;
+                llmSavedDollars += sessionValue;
+                llmFailoverCount++;
+                addLogEntry("switch", `💰 LLM failover saved $${sessionValue.toFixed(4)} (total saved: $${llmSavedDollars.toFixed(4)})`, gps);
+            }
+        }).catch(e=>{});
+    }
     prevState = s.state; prevMode = s.mode; prevActive = s.active_uplink;
 }
 
@@ -1684,6 +1718,145 @@ async function loadEventHistory() {
 
 /* Load event history on page load */
 loadEventHistory();
+// LLM Floating Window
+var llmCostPerToken = 0.002; // $/token - adjustable
+var llmSavedDollars = 0;
+var llmFailoverCount = 0;
+function llmFloat() {
+    if(document.getElementById("llm-float")) { document.getElementById("llm-float").remove(); return; }
+    let w = document.createElement("div");
+    w.id = "llm-float";
+    w.style.cssText = "position:fixed;bottom:20px;right:20px;width:650px;height:70vh;background:var(--panel);border:2px solid var(--blue);border-radius:8px;z-index:9998;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,212,255,0.2);resize:both;overflow:hidden";
+    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="llmDrag(event)">
+        <span style="color:var(--blue);font-size:12px;font-weight:bold">⚡ PathSteer LLM Lab</span>
+        <div><span id="llm-fl-status" style="font-size:10px;color:var(--muted);margin-right:8px">Stopped</span><button onclick="document.getElementById(\x27llm-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    </div>
+    <div style="padding:8px 12px;flex-shrink:0">
+        <textarea id="llm-fl-prompt" rows="2" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;font-size:12px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById("llm-prompt").value}</textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+            <select id="llm-fl-loops" style="background:var(--card);color:var(--text);border:1px solid var(--border);font-size:11px;font-family:inherit;padding:5px;border-radius:4px">
+                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5 loops</option><option value="10">10</option><option value="50">50</option><option value="100">100</option>
+            </select>
+            <button onclick="llmFlStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:6px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">▶ START</button>
+            <button onclick="llmStop();document.getElementById(\x27llm-fl-status\x27).textContent=\x27Stopped\x27" style="background:var(--red);color:white;border:none;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■</button>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px;font-size:10px;flex-wrap:wrap">
+            <div>⚡ <span id="llm-fl-tps" style="color:var(--blue);font-weight:bold">0</span> tok/s</div>
+            <div>📊 <span id="llm-fl-total" style="color:var(--green);font-weight:bold">0</span> tokens</div>
+            <div>🔄 <span id="llm-fl-reqs" style="color:var(--text)">0</span> reqs</div>
+            <div>❌ <span id="llm-fl-errs" style="color:var(--red)">0</span></div>
+            <div>💰 $<span id="llm-fl-cost" style="color:var(--yellow);font-weight:bold">0.00</span> value</div>
+            <div>🛡️ $<span id="llm-fl-saved" style="color:var(--green);font-weight:bold">0.00</span> saved by failover</div>
+        </div>
+        <div style="margin-top:4px;font-size:9px;color:var(--muted)">Cost/token: $<input id="llm-fl-cpt" type="number" step="0.001" value="0.002" style="width:60px;background:var(--bg);color:var(--yellow);border:1px solid var(--border);font-size:9px;font-family:inherit;padding:2px;border-radius:2px" onchange="llmCostPerToken=parseFloat(this.value)"></div>
+    </div>
+    <div style="flex:1;overflow-y:auto;margin:0 12px 12px;min-height:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;line-height:1.7;color:var(--text)" id="llm-fl-output">Waiting for output...</div>`;
+    document.body.appendChild(w);
+    llmFlPoll();
+}
+var llmDragEl=null,llmDragX=0,llmDragY=0;
+function llmDrag(e){llmDragEl=document.getElementById("llm-float");llmDragX=e.clientX-llmDragEl.offsetLeft;llmDragY=e.clientY-llmDragEl.offsetTop;document.onmousemove=function(e){llmDragEl.style.left=(e.clientX-llmDragX)+"px";llmDragEl.style.top=(e.clientY-llmDragY)+"px";llmDragEl.style.right="auto";llmDragEl.style.bottom="auto"};document.onmouseup=function(){document.onmousemove=null}}
+async function llmFlStart() {
+    const prompt = document.getElementById("llm-fl-prompt").value;
+    const loops = parseInt(document.getElementById("llm-fl-loops").value);
+    document.getElementById("llm-prompt").value = prompt;
+    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
+}
+function llmFlPoll() {
+    if(!document.getElementById("llm-float")) return;
+    fetch("/api/llm/status").then(r=>r.json()).then(d=>{
+        let el;
+        el=document.getElementById("llm-fl-tps"); if(el) el.textContent=d.tokens_per_sec||0;
+        el=document.getElementById("llm-fl-total"); if(el) el.textContent=d.total_tokens||0;
+        el=document.getElementById("llm-fl-reqs"); if(el) el.textContent=d.total_requests||0;
+        el=document.getElementById("llm-fl-errs"); if(el) el.textContent=d.errors||0;
+        el=document.getElementById("llm-fl-output"); if(el && d.full_log) { el.textContent=d.full_log; el.scrollTop=el.scrollHeight; }
+        el=document.getElementById("llm-fl-status"); if(el) { el.textContent=d.running?"⚡ Running":"Stopped"; el.style.color=d.running?"var(--green)":"var(--muted)"; }
+        let cost=(d.total_tokens||0)*llmCostPerToken;
+        el=document.getElementById("llm-fl-cost"); if(el) el.textContent=cost.toFixed(4);
+        el=document.getElementById("llm-fl-saved"); if(el) el.textContent=llmSavedDollars.toFixed(4);
+    }).catch(e=>{});
+    setTimeout(llmFlPoll, 500);
+}
+// LLM Popup Modal
+function llmPopup() {
+    let d = document.createElement("div");
+    d.id = "llm-modal";
+    d.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center";
+    d.innerHTML = `<div style="background:var(--panel);border:1px solid var(--blue);border-radius:8px;width:600px;max-height:80vh;padding:16px;font-family:inherit">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="color:var(--blue);font-size:14px">⚡ PathSteer LLM Lab</h3>
+            <button onclick="document.getElementById(\x27llm-modal\x27).remove()" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;font-family:inherit">✕</button>
+        </div>
+        <div style="margin-bottom:10px">
+            <label style="color:var(--muted);font-size:10px">PROMPT</label>
+            <textarea id="llm-pop-prompt" rows="3" style="width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);padding:8px;font-size:11px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById("llm-prompt").value}</textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+            <select id="llm-pop-loops" style="background:var(--card);color:var(--text);border:1px solid var(--border);font-size:11px;font-family:inherit;padding:6px;border-radius:4px">
+                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5 loops</option><option value="10">10 loops</option><option value="50">50 loops</option>
+            </select>
+            <button onclick="llmPopStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:8px;font-size:12px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">▶ START</button>
+            <button onclick="llmStop()" style="flex:1;background:var(--red);color:white;border:none;padding:8px;font-size:12px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■ STOP</button>
+        </div>
+        <div style="display:flex;gap:12px;margin-bottom:10px;font-size:11px">
+            <div>Tokens/s: <span id="llm-pop-tps" style="color:var(--blue);font-weight:bold">0</span></div>
+            <div>Total: <span id="llm-pop-total" style="color:var(--green);font-weight:bold">0</span></div>
+            <div>Requests: <span id="llm-pop-reqs" style="color:var(--text)">0</span></div>
+            <div>Errors: <span id="llm-pop-errs" style="color:var(--red)">0</span></div>
+            <div id="llm-pop-status" style="color:var(--muted)">Stopped</div>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;max-height:300px;overflow-y:auto;font-size:11px;line-height:1.6;color:var(--text)" id="llm-pop-output">Waiting for output...</div>
+    </div>`;
+    d.addEventListener("click", function(e) { if(e.target === d) d.remove(); });
+    document.body.appendChild(d);
+    llmPopPoll();
+}
+async function llmPopStart() {
+    const prompt = document.getElementById("llm-pop-prompt").value;
+    const loops = parseInt(document.getElementById("llm-pop-loops").value);
+    document.getElementById("llm-prompt").value = prompt;
+    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
+}
+function llmPopPoll() {
+    if(!document.getElementById("llm-modal")) return;
+    fetch("/api/llm/status").then(r=>r.json()).then(d=>{
+        let el = document.getElementById("llm-pop-tps"); if(el) el.textContent = d.tokens_per_sec||0;
+        el = document.getElementById("llm-pop-total"); if(el) el.textContent = d.total_tokens||0;
+        el = document.getElementById("llm-pop-reqs"); if(el) el.textContent = d.total_requests||0;
+        el = document.getElementById("llm-pop-errs"); if(el) el.textContent = d.errors||0;
+        el = document.getElementById("llm-pop-output"); if(el && d.last_response) el.textContent = d.last_response;
+        el = document.getElementById("llm-pop-status"); if(el) { el.textContent = d.running?"⚡ Running":"Stopped"; el.style.color = d.running?"var(--green)":"var(--muted)"; }
+    }).catch(e=>{});
+    setTimeout(llmPopPoll, 500);
+}
+// LLM Test Functions
+async function llmStart() {
+    const prompt = document.getElementById("llm-prompt").value;
+    const loops = parseInt(document.getElementById("llm-loops").value);
+    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
+    document.getElementById("target-llm").textContent = "Running";
+    document.getElementById("target-llm").style.color = "var(--green)";
+}
+async function llmStop() {
+    await fetch("/api/llm/stop", {method:"POST"});
+    document.getElementById("target-llm").textContent = "Stopped";
+    document.getElementById("target-llm").style.color = "var(--muted)";
+}
+async function llmPoll() {
+    try {
+        const r = await fetch("/api/llm/status");
+        const d = await r.json();
+        document.getElementById("llm-tps").textContent = d.tokens_per_sec || 0;
+        document.getElementById("llm-total").textContent = d.total_tokens || 0;
+        document.getElementById("llm-reqs").textContent = d.total_requests || 0;
+        document.getElementById("llm-errs").textContent = d.errors || 0;
+        if(d.last_response) document.getElementById("llm-response").textContent = d.last_response;
+        if(d.running) { document.getElementById("target-llm").textContent = "Running"; document.getElementById("target-llm").style.color = "var(--green)"; }
+        else { document.getElementById("target-llm").textContent = "Stopped"; document.getElementById("target-llm").style.color = "var(--muted)"; }
+    } catch(e) {}
+}
+setInterval(llmPoll, 1000);
 </script>
 </body>
 </html>
