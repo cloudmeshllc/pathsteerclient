@@ -54,7 +54,7 @@ ip netns add ns_vip 2>/dev/null || true
 ip netns exec ns_vip ip link set lo up
 ip netns exec ns_vip ip addr add 104.204.138.50/32 dev lo 2>/dev/null || true
 ip netns exec ns_vip sysctl -qw net.ipv4.ip_forward=1
-echo "ns_vip created with 104.204.136.50/28"
+echo "ns_vip created with 104.204.138.50/32"
 
 ###############################################################################
 # 3. Disable rp_filter globally (prevents routing drops)
@@ -164,7 +164,7 @@ ip netns exec ns_cell_b ip route replace default dev wg-cb-cA table pathsteer
 echo "Policy routes set"
 
 ###############################################################################
-# 8. Controller endpoint routes for cellular (via main ns veth)
+# 8. Controller endpoint (ctrl-a=104.204.136.13, ctrl-b=104.204.136.14) routes for cellular (via main ns veth)
 ###############################################################################
 ip netns exec ns_cell_a ip route replace 104.204.136.13 via 10.201.5.1 dev veth_cell_a_i
 ip netns exec ns_cell_a ip route replace 104.204.136.14 via 10.201.5.1 dev veth_cell_a_i
@@ -286,3 +286,64 @@ echo "ns_vip VIP: $(ip netns exec ns_vip ip addr show lo | grep 104.204)"
 echo "ns_vip veths: $(ip netns exec ns_vip ip link show | grep -c UP) UP"
 echo "Namespaces: $(ip netns list | wc -l)"
 echo "Default route: $(ip route show default | head -1)"
+
+###############################################################################
+# 16. IPv6 Dual-Stack Configuration
+###############################################################################
+echo "=== Configuring IPv6 dual-stack ==="
+
+# Enable IPv6 forwarding globally
+sysctl -qw net.ipv6.conf.all.forwarding=1
+sysctl -qw net.ipv6.conf.default.forwarding=1
+
+# VIP IPv6 address on ns_vip loopback
+ip netns exec ns_vip ip -6 addr add 2602:F644:10:01::50/128 dev lo 2>/dev/null || true
+ip netns exec ns_vip sysctl -qw net.ipv6.conf.all.forwarding=1
+
+# IPv6 on ns_vip <-> path namespace veth pairs
+# Using fd10:ps:X::/64 link-local for veth pairs (ULA for internal transit)
+for pair in "fa 1" "fb 2" "sl_a 3" "sl_b 4" "cell_a 5" "cell_b 6"; do
+    set -- $pair
+    name=$1; idx=$2
+    ip netns exec ns_vip ip -6 addr add fd10:ps:${idx}::1/64 dev vip_$name 2>/dev/null || true
+    ns="ns_$name"
+    [ "$name" = "sl_a" ] && ns="ns_sl_a"
+    [ "$name" = "sl_b" ] && ns="ns_sl_b"
+    [ "$name" = "cell_a" ] && ns="ns_cell_a"
+    [ "$name" = "cell_b" ] && ns="ns_cell_b"
+    ip netns exec $ns ip -6 addr add fd10:ps:${idx}::2/64 dev vip_${name}_i 2>/dev/null || true
+    echo "IPv6 veth vip_$name: fd10:ps:${idx}::/64"
+done
+
+# Return routes: VIP /128 back from each path namespace
+for pair in "ns_fa fa 1" "ns_fb fb 2" "ns_sl_a sl_a 3" "ns_sl_b sl_b 4" "ns_cell_a cell_a 5" "ns_cell_b cell_b 6"; do
+    set -- $pair
+    ns=$1; name=$2; idx=$3
+    ip netns exec $ns ip -6 route replace 2602:F644:10:01::50/128 via fd10:ps:${idx}::1 dev vip_${name}_i 2>/dev/null || true
+done
+
+# Policy routing: VIP source through WG (table 100)
+for ns in ns_fa ns_fb ns_sl_a ns_sl_b ns_cell_a ns_cell_b; do
+    ip netns exec $ns ip -6 rule del from 2602:F644:10::/56 lookup 100 priority 50 2>/dev/null || true
+    ip netns exec $ns ip -6 rule add from 2602:F644:10::/56 lookup 100 priority 50
+done
+
+# Default IPv6 route in ns_vip (via fiber A initially, daemon overrides)
+ip netns exec ns_vip ip -6 route replace default via fd10:ps:1::2 dev vip_fa 2>/dev/null || true
+
+# WiFi IPv6: clients get SLAAC from 2602:F644:10:10::/64
+ip -6 addr add 2602:F644:10:10::1/64 dev wlp7s0 2>/dev/null || true
+
+# WiFi vip_wifi veth IPv6
+ip -6 addr add fd10:ps:w::1/64 dev vip_wifi 2>/dev/null || true
+ip netns exec ns_vip ip -6 addr add fd10:ps:w::2/64 dev vip_wifi_i 2>/dev/null || true
+ip netns exec ns_vip ip -6 route replace 2602:F644:10:10::/64 via fd10:ps:w::1 dev vip_wifi_i 2>/dev/null || true
+
+# IPv6 forwarding in all namespaces
+for ns in ns_fa ns_fb ns_sl_a ns_sl_b ns_cell_a ns_cell_b ns_vip; do
+    ip netns exec $ns sysctl -qw net.ipv6.conf.all.forwarding=1
+done
+
+echo "IPv6 dual-stack configured"
+echo "VIP IPv6: $(ip netns exec ns_vip ip -6 addr show lo | grep 2602)"
+echo "WiFi IPv6: $(ip -6 addr show wlp7s0 | grep 2602)"
