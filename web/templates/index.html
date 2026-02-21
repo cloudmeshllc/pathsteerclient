@@ -35,7 +35,7 @@
         .dashboard {
             display: grid;
             grid-template-columns: 260px 1fr 280px 260px;
-            grid-template-rows: 48px 1fr 160px;
+            grid-template-rows: 48px minmax(300px, 1fr) 180px;
             height: 100vh;
             gap: 1px;
             background: var(--border);
@@ -349,7 +349,7 @@
         .target-status.offline { color: var(--red); }
 
         /* Event Log Panel */
-        .event-log {
+        .event-log { grid-row: 3; min-height: 180px;
             grid-column: 1 / -1;
             background: var(--panel);
             border-top: 1px solid var(--border);
@@ -531,7 +531,7 @@
             margin-top: 4px;
             overflow: hidden;
         }
-        .throughput-fill {
+        .throughput-fill { transition: width 0.8s ease;
             height: 100%;
             background: linear-gradient(90deg, var(--blue), var(--green));
             border-radius: 3px;
@@ -542,7 +542,7 @@
         @media (max-width: 1200px) {
             .dashboard {
                 grid-template-columns: 240px 1fr 240px;
-                grid-template-rows: 48px 1fr 140px;
+                grid-template-rows: 48px minmax(300px, 1fr) 180px;
             }
             .stats-panel { display: none; }
         }
@@ -576,7 +576,7 @@
                 grid-row: auto;
                 max-height: 250px;
             }
-            .event-log {
+            .event-log { grid-row: 3; min-height: 180px;
                 grid-column: 1;
                 height: 120px;
             }
@@ -675,7 +675,7 @@
             .panel.left-panel {
                 flex: 1 1 auto;
                 min-height: 200px;
-                max-height: 50vh;
+                max-height: none;
                 overflow-y: scroll;
                 padding: 8px;
                 -webkit-overflow-scrolling: touch;
@@ -757,7 +757,7 @@
             .mode-buttons .btn { padding: 8px 12px; font-size: 11px; }
             
             /* Event log minimal */
-            .event-log {
+            .event-log { grid-row: 3; min-height: 180px;
                 flex: 0 0 100px;
                 font-size: 9px;
             }
@@ -996,7 +996,7 @@
     </div>
 
     <!-- Right: Controls & Status -->
-    <div class="panel">
+    <div class="panel" style="overflow-y:auto">
         <div class="flap-banner" id="flap-banner">⚡ FLAP SUPPRESSED — Max switches reached</div>
         
         <div class="countdown-panel" id="countdown-panel">
@@ -1091,13 +1091,9 @@
             </div>
         </div>
         
-        <h2 style="margin-top:10px">Run</h2>
-        <div style="font-size:9px">
-            <div style="color:var(--muted)">ID: <span style="color:var(--blue)" id="run-id">--</span></div>
-            <div style="color:var(--muted)">Dup: <span id="dup-status" style="color:var(--muted)">OFF</span></div>
+        <div style="margin-top:8px;font-size:8px;color:var(--muted);border-top:1px solid var(--border);padding-top:4px">
+            Run: <span style="color:var(--blue)" id="run-id">--</span> | Dup: <span id="dup-status">OFF</span>
         </div>
-    </div>
-
     <!-- Event Log Panel -->
     <div class="event-log">
         <div class="event-log-header">
@@ -1154,10 +1150,14 @@ function updateStats(s) {
     // Throughput (placeholder - would come from actual traffic stats)
     const downMbps = s.throughput_down_mbps || 0;
     const upMbps = s.throughput_up_mbps || 0;
-    document.getElementById('throughput-down').textContent = downMbps.toFixed(1) + ' Mbps';
-    document.getElementById('throughput-up').textContent = upMbps.toFixed(1) + ' Mbps';
-    document.getElementById('throughput-down-bar').style.width = Math.min(100, downMbps) + '%';
-    document.getElementById('throughput-up-bar').style.width = Math.min(100, upMbps * 2) + '%';
+    if(!window._smoothDown) window._smoothDown = 0;
+    if(!window._smoothUp) window._smoothUp = 0;
+    window._smoothDown = window._smoothDown * 0.7 + downMbps * 0.3;
+    window._smoothUp = window._smoothUp * 0.7 + upMbps * 0.3;
+    document.getElementById("throughput-down").textContent = window._smoothDown.toFixed(1) + " Mbps";
+    document.getElementById("throughput-up").textContent = window._smoothUp.toFixed(1) + " Mbps";
+    document.getElementById("throughput-down-bar").style.width = Math.min(100, window._smoothDown * 2) + "%";
+    document.getElementById("throughput-up-bar").style.width = Math.min(100, window._smoothUp * 2) + "%";
     
     // Session uptime
     if (s.run_id) {
@@ -1662,12 +1662,12 @@ function updateStats(s) {
     }
     
     // Throughput (placeholder - would come from actual traffic stats)
-    const downMbps = s.throughput_down_mbps || 0;
-    const upMbps = s.throughput_up_mbps || 0;
-    document.getElementById('throughput-down').textContent = downMbps.toFixed(1) + ' Mbps';
-    document.getElementById('throughput-up').textContent = upMbps.toFixed(1) + ' Mbps';
-    document.getElementById('throughput-down-bar').style.width = Math.min(100, downMbps) + '%';
-    document.getElementById('throughput-up-bar').style.width = Math.min(100, upMbps * 2) + '%';
+    const downMbps2 = s.throughput_down_mbps || 0;
+    const upMbps2 = s.throughput_up_mbps || 0;
+    if(!window._smoothDown) window._smoothDown = 0;
+    if(!window._smoothUp) window._smoothUp = 0;
+    window._smoothDown = window._smoothDown * 0.7 + downMbps2 * 0.3;
+    window._smoothUp = window._smoothUp * 0.7 + upMbps2 * 0.3;
     
     // Session uptime
     if (s.run_id) {
