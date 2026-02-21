@@ -1108,6 +1108,7 @@
                 <button onclick="filterLog('switch')">SWITCHES</button>
                 <button onclick="filterLog('error')">ERRORS</button>
                 <button onclick="exportLog()" style="border-color:var(--green);color:var(--green)">EXPORT</button>
+                <button onclick="logFloat()" style="border-color:var(--purple);color:var(--purple)">HISTORY</button>
             </div>
         </div>
         <div class="event-log-content" id="event-log-content">
@@ -1568,7 +1569,7 @@ function addLogEntry(level, msg, gps, persist=true) {
     const entry = { time: ts, level, msg, gps: gps || null, timestamp: now };
     eventLog.push(entry);
     if (eventLog.length > 500) eventLog.shift();
-    if (persist) { fetch("/api/events/log", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:level,message:msg,detail:gps||""})}).catch(()=>{}); }
+    if (persist) { fetch("/api/log/write", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:level,message:msg,detail:gps||""})}).catch(()=>{}); }
     renderLog();
 }
 
@@ -1857,6 +1858,159 @@ async function llmPoll() {
     } catch(e) {}
 }
 setInterval(llmPoll, 1000);
+// Flow Monitor
+async function flowPoll() {
+    try {
+        const r = await fetch("/api/flows");
+        const d = await r.json();
+        let el = document.getElementById("flow-count"); if(el) el.textContent = d.active_flows||0;
+        el = document.getElementById("sip-count"); if(el) el.textContent = d.active_sip_calls||0;
+        el = document.getElementById("flow-failovers"); if(el) el.textContent = d.failover_count||0;
+        if(document.getElementById("flow-float")) flowUpdateTable(d);
+    } catch(e) {}
+}
+setInterval(flowPoll, 2000);
+// Log History Floating Viewer
+function logFloat() {
+    if(document.getElementById("log-float")) { document.getElementById("log-float").remove(); return; }
+    let now = new Date();
+    let hr = new Date(now - 3600000);
+    let fmtDT = d => d.toISOString().slice(0,16);
+    let w = document.createElement("div");
+    w.id = "log-float";
+    w.style.cssText = "position:fixed;top:80px;left:300px;width:750px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9996;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,0.2);resize:both;overflow:hidden";
+    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="logDrag(event)">
+        <span style="color:var(--purple);font-size:12px;font-weight:bold">📋 Event History</span>
+        <div><span id="log-fl-count" style="font-size:10px;color:var(--muted);margin-right:8px"></span><button onclick="document.getElementById(\x27log-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    </div>
+    <div style="display:flex;gap:6px;padding:8px 12px;align-items:center;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--muted)">From:</span>
+        <input type="datetime-local" id="log-fl-start" value="${fmtDT(hr)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <span style="font-size:9px;color:var(--muted)">To:</span>
+        <input type="datetime-local" id="log-fl-end" value="${fmtDT(now)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <button onclick="logFlLoad()" style="background:var(--blue);color:var(--bg);border:none;padding:4px 12px;font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;font-weight:bold">LOAD</button>
+        <select id="log-fl-type" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+            <option value="all">All</option><option value="switch">Switches</option><option value="trigger">Triggers</option><option value="error">Errors</option><option value="info">Info</option>
+        </select>
+        <button onclick="logFlLoad(\x27last1h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">1H</button>
+        <button onclick="logFlLoad(\x27last6h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">6H</button>
+        <button onclick="logFlLoad(\x27last24h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">24H</button>
+    </div>
+    <div id="log-fl-content" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:10px;font-family:inherit;min-height:0"></div>`;
+    document.body.appendChild(w);
+    logFlLoad();
+}
+var logDragEl=null,logDragX=0,logDragY=0;
+function logDrag(e){logDragEl=document.getElementById("log-float");logDragX=e.clientX-logDragEl.offsetLeft;logDragY=e.clientY-logDragEl.offsetTop;document.onmousemove=function(e){logDragEl.style.left=(e.clientX-logDragX)+"px";logDragEl.style.top=(e.clientY-logDragY)+"px"};document.onmouseup=function(){document.onmousemove=null}}
+
+async function logFlLoad(preset) {
+    let start = document.getElementById("log-fl-start").value;
+    let end = document.getElementById("log-fl-end").value;
+    let etype = document.getElementById("log-fl-type").value;
+    if(preset) {
+        let now = new Date();
+        end = now.toISOString();
+        let ms = preset==="last1h"?3600000:preset==="last6h"?21600000:86400000;
+        start = new Date(now-ms).toISOString();
+    } else {
+        start = start ? new Date(start).toISOString() : "";
+        end = end ? new Date(end).toISOString() : "";
+    }
+    try {
+        const r = await fetch(`/api/log/query?start=${start}&end=${end}&type=${etype}&limit=500`);
+        const d = await r.json();
+        let el = document.getElementById("log-fl-count");
+        if(el) el.textContent = (d.events||[]).length + " events";
+        let content = document.getElementById("log-fl-content");
+        if(content) {
+            if(!d.events || d.events.length === 0) {
+                content.innerHTML = "<div style=\x27color:var(--muted);padding:20px;text-align:center\x27>No events in range</div>";
+                return;
+            }
+            let html = "";
+            d.events.forEach(e => {
+                let color = e.type==="switch"?"var(--yellow)":e.type==="trigger"?"var(--red)":e.type==="error"?"var(--red)":"var(--muted)";
+                let time = e.server_time ? e.server_time.replace("T"," ").slice(0,19) : "?";
+                html += `<div style="padding:3px 0;border-bottom:1px solid var(--border);display:flex;gap:8px">`;
+                html += `<span style="color:var(--muted);min-width:140px;flex-shrink:0">${time}</span>`;
+                html += `<span style="color:${color};min-width:60px;font-weight:bold;flex-shrink:0">${(e.type||"info").toUpperCase()}</span>`;
+                html += `<span style="color:var(--text)">${e.message||""}</span>`;
+                html += `</div>`;
+            });
+            content.innerHTML = html;
+            content.scrollTop = content.scrollHeight;
+        }
+    } catch(e) { console.error(e); }
+}
+// Log History Floating Viewer
+
+function flowFloat() {
+    if(document.getElementById("flow-float")) { document.getElementById("flow-float").remove(); return; }
+    let w = document.createElement("div");
+    w.id = "flow-float";
+    w.style.cssText = "position:fixed;top:60px;left:280px;width:700px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9997;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,0.2);resize:both;overflow:hidden";
+    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="flowDrag(event)">
+        <span style="color:var(--purple);font-size:12px;font-weight:bold">📡 PathSteer Flow Monitor</span>
+        <div><span id="flow-fl-count" style="font-size:10px;color:var(--green);margin-right:8px">0 flows</span><button onclick="document.getElementById(\x27flow-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    </div>
+    <div style="display:flex;gap:12px;padding:6px 12px;font-size:10px;background:var(--card)">
+        <div>Active: <span id="flow-fl-active" style="color:var(--green);font-weight:bold">0</span></div>
+        <div>SIP Calls: <span id="flow-fl-sip" style="color:var(--blue);font-weight:bold">0</span></div>
+        <div>Registrations: <span id="flow-fl-regs" style="color:var(--text)">0</span></div>
+        <div>🛡️ Failovers: <span id="flow-fl-fo" style="color:var(--yellow);font-weight:bold">0</span></div>
+    </div>
+    <div style="padding:4px 12px;font-size:9px;color:var(--muted);background:var(--card);border-bottom:1px solid var(--border)">
+        <div style="display:grid;grid-template-columns:70px 1fr 1fr 60px 60px 50px 50px;gap:4px;font-weight:bold">
+            <span>Service</span><span>Source</span><span>Destination</span><span>Packets</span><span>Bytes</span><span>Age</span><span>🛡️</span>
+        </div>
+    </div>
+    <div id="flow-fl-table" style="flex:1;overflow-y:auto;margin:0;padding:0 12px;font-size:9px"></div>
+    <div id="flow-fl-sip-panel" style="max-height:120px;overflow-y:auto;margin:0 12px 8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:10px">
+        <div style="color:var(--blue);font-weight:bold;margin-bottom:4px">SIP Calls</div>
+        <div id="flow-fl-sip-list" style="color:var(--muted)">No active calls</div>
+    </div>`;
+    document.body.appendChild(w);
+}
+var flowDragEl=null,flowDragX=0,flowDragY=0;
+function flowDrag(e){flowDragEl=document.getElementById("flow-float");flowDragX=e.clientX-flowDragEl.offsetLeft;flowDragY=e.clientY-flowDragEl.offsetTop;document.onmousemove=function(e){flowDragEl.style.left=(e.clientX-flowDragX)+"px";flowDragEl.style.top=(e.clientY-flowDragY)+"px"};document.onmouseup=function(){document.onmousemove=null}}
+
+function flowUpdateTable(d) {
+    let el = document.getElementById("flow-fl-active"); if(el) el.textContent = d.active_flows||0;
+    el = document.getElementById("flow-fl-sip"); if(el) el.textContent = d.active_sip_calls||0;
+    el = document.getElementById("flow-fl-regs"); if(el) el.textContent = d.registrations||0;
+    el = document.getElementById("flow-fl-fo"); if(el) el.textContent = d.failover_count||0;
+    el = document.getElementById("flow-fl-count"); if(el) el.textContent = (d.active_flows||0) + " flows";
+    let tbl = document.getElementById("flow-fl-table");
+    if(tbl && d.flows) {
+        let html = "";
+        d.flows.forEach(f => {
+            let age = Math.round((d.updated - f.start));
+            let ageStr = age < 60 ? age+"s" : Math.floor(age/60)+"m";
+            let bytes = f.bytes > 1048576 ? (f.bytes/1048576).toFixed(1)+"M" : f.bytes > 1024 ? (f.bytes/1024).toFixed(0)+"K" : f.bytes;
+            let color = f.service.includes("SIP") ? "var(--blue)" : f.service.includes("RTP") ? "var(--green)" : f.service.includes("AWS") ? "var(--yellow)" : "var(--text)";
+            let foColor = f.failovers_survived > 0 ? "var(--green)" : "var(--muted)";
+            html += `<div style="display:grid;grid-template-columns:70px 1fr 1fr 60px 60px 50px 50px;gap:4px;padding:2px 0;border-bottom:1px solid var(--border)">`;
+            html += `<span style="color:${color}">${f.service}</span>`;
+            html += `<span>${f.src}</span><span>${f.dst}</span>`;
+            html += `<span>${f.packets}</span><span>${bytes}</span>`;
+            html += `<span>${ageStr}</span>`;
+            html += `<span style="color:${foColor};font-weight:bold">${f.failovers_survived}</span>`;
+            html += `</div>`;
+        });
+        tbl.innerHTML = html || "<div style=\x27color:var(--muted);padding:10px\x27>No active flows</div>";
+    }
+    let sipList = document.getElementById("flow-fl-sip-list");
+    if(sipList && d.sip_calls) {
+        let html = "";
+        d.sip_calls.forEach(c => {
+            let stateColor = c.state=="active" ? "var(--green)" : c.state=="ringing" ? "var(--yellow)" : "var(--red)";
+            html += `<div style="margin:2px 0"><span style="color:${stateColor}">[${c.state}]</span> ${c.calling} → ${c.called} <span style="color:var(--muted);font-size:8px">${c.call_id}</span>`;
+            if(c.failovers_survived > 0) html += ` <span style="color:var(--green)">🛡️${c.failovers_survived}</span>`;
+            html += `</div>`;
+        });
+        sipList.innerHTML = html || "<div style=\x27color:var(--muted)\x27>No active calls</div>";
+    }
+}
 </script>
 </body>
 </html>

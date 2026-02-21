@@ -650,6 +650,52 @@ def api_sip_status():
     except:
         return jsonify({'active_calls': 0, 'calls': [], 'regs': []})
 
+# =============================================================================
+# EVENT LOG API
+# =============================================================================
+EVENT_LOG = '/opt/pathsteer/data/logs/events.jsonl'
+
+@app.route('/api/log/write', methods=['POST'])
+def api_log_write():
+    """Write event from frontend to persistent log"""
+    data = request.get_json()
+    data['server_time'] = datetime.utcnow().isoformat() + 'Z'
+    try:
+        with open(EVENT_LOG, 'a') as f:
+            f.write(json.dumps(data) + '\n')
+    except: pass
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/log/query')
+def api_log_query():
+    """Query events by timestamp range"""
+    start = request.args.get('start', '')
+    end = request.args.get('end', '')
+    etype = request.args.get('type', 'all')
+    limit = int(request.args.get('limit', '500'))
+    events = []
+    try:
+        with open(EVENT_LOG, 'r') as f:
+            for line in f:
+                try:
+                    e = json.loads(line.strip())
+                    if start and e.get('server_time', '') < start: continue
+                    if end and e.get('server_time', '') > end: continue
+                    if etype != 'all' and e.get('type', '') != etype: continue
+                    events.append(e)
+                except: pass
+    except FileNotFoundError: pass
+    return jsonify({'events': events[-limit:]})
+
+@app.route('/api/log/status')
+def api_log_status_json():
+    """Read latest daemon status with full uplink details"""
+    try:
+        with open('/run/pathsteer/status.json', 'r') as f:
+            return jsonify(json.load(f))
+    except:
+        return jsonify({})
+
 if __name__ == '__main__':
     # Ensure directories exist
     os.makedirs('/run/pathsteer', exist_ok=True)
