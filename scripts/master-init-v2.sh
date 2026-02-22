@@ -24,6 +24,9 @@ echo "=== master-init.sh starting $(date) ==="
 # 0. IMMEDIATE: Default route + DNS (so Tailscale works RIGHT AWAY)
 ###############################################################################
 echo "nameserver 4.2.2.2" > /etc/resolv.conf
+# DNS entries for controller resolution in all namespaces
+grep -q "ctrl-a.pathsteerlabs.com" /etc/hosts || echo "104.204.136.13 ctrl-a.pathsteerlabs.com" >> /etc/hosts
+grep -q "ctrl-b.pathsteerlabs.com" /etc/hosts || echo "104.204.136.14 ctrl-b.pathsteerlabs.com" >> /etc/hosts
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
 # Remove any bad default routes from old services
@@ -327,6 +330,15 @@ for ns in ns_fa ns_fb ns_sl_a ns_sl_b ns_cell_a ns_cell_b; do
     ip netns exec $ns ip -6 rule del from 2602:F644:10::/56 lookup 100 priority 50 2>/dev/null || true
     ip netns exec $ns ip -6 rule add from 2602:F644:10::/56 lookup 100 priority 50
 done
+
+# IPv6 default route in table pathsteer per namespace (through WG)
+ip netns exec ns_fa ip -6 route replace default dev wg-fa-cA table pathsteer 2>/dev/null || true
+ip netns exec ns_fb ip -6 route replace default dev wg-fb-cA table pathsteer 2>/dev/null || true
+ip netns exec ns_sl_a ip -6 route replace default dev wg-sa-cA table pathsteer 2>/dev/null || true
+ip netns exec ns_sl_b ip -6 route replace default dev wg-sb-cA table pathsteer 2>/dev/null || true
+ip netns exec ns_cell_a ip -6 route replace default dev wg-ca-cA table pathsteer 2>/dev/null || true
+ip netns exec ns_cell_b ip -6 route replace default dev wg-cb-cA table pathsteer 2>/dev/null || true
+echo "IPv6 WG routes in table pathsteer set"
 
 # Default IPv6 route in ns_vip (via fiber A initially, daemon overrides)
 ip netns exec ns_vip ip -6 route replace default via fd10:0:0:1::2 dev vip_fa 2>/dev/null || true
