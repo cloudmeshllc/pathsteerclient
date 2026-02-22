@@ -323,6 +323,7 @@ for pair in "ns_fa fa 1" "ns_fb fb 2" "ns_sl_a sl_a 3" "ns_sl_b sl_b 4" "ns_cell
     set -- $pair
     ns=$1; name=$2; idx=$3
     ip netns exec $ns ip -6 route replace 2602:F644:10:01::50/128 via fd10:0:0:${idx}::1 dev vip_${name}_i 2>/dev/null || true
+    ip netns exec $ns ip -6 route replace 2602:F644:10:10::/64 via fd10:0:0:${idx}::1 dev vip_${name}_i 2>/dev/null || true
 done
 
 # Policy routing: VIP source through WG (table 100)
@@ -359,3 +360,15 @@ done
 echo "IPv6 dual-stack configured"
 echo "VIP IPv6: $(ip netns exec ns_vip ip -6 addr show lo | grep 2602)"
 echo "WiFi IPv6: $(ip -6 addr show wlp7s0 | grep 2602)"
+
+###############################################################################
+# 17. WiFi IPv6 Routing
+###############################################################################
+# Mark WiFi IPv6 client traffic
+ip6tables -t mangle -D PREROUTING -i wlp7s0 -s 2602:f644:10:10::/64 -j MARK --set-mark 100 2>/dev/null || true
+ip6tables -t mangle -A PREROUTING -i wlp7s0 -s 2602:f644:10:10::/64 -j MARK --set-mark 100
+
+# Global route for WiFi IPv6 - all routable IPv6 via vip_wifi to ns_vip
+ip -6 route replace 2001::/3 via fd10:0:0:f0::2 dev vip_wifi
+
+echo "WiFi IPv6 routing configured"
