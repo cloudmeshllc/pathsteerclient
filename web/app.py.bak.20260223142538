@@ -632,6 +632,7 @@ def api_llm_stop():
 def api_llm_status():
     with llm_lock:
         return jsonify(dict(llm_state))
+@app.route('/api/sip/status')
 
 @app.route('/api/flows')
 def api_flows():

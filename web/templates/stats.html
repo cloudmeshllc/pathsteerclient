@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathSteer Guardian — Diagnostics</title>
+    <style>
+        :root{--bg:#0a0a0f;--panel:#12121a;--card:#1a1a2e;--border:#2a2a4e;--text:#e0e0e0;--muted:#666;--blue:#00d4ff;--purple:#7b2cbf;--green:#00ff88;--yellow:#ffaa00;--orange:#ff6600;--red:#ff4444}
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'SF Mono','Fira Code',monospace;background:var(--bg);color:var(--text);font-size:11px;overflow-y:auto}
+        .header{background:linear-gradient(90deg,var(--panel),#1a1a30);padding:12px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+        .header h1{font-size:14px;font-weight:700;letter-spacing:2px}
+        .header h1 .accent{color:var(--blue)}
+        .header-right{display:flex;gap:10px;align-items:center}
+        .header-btn{padding:6px 14px;background:var(--card);border:1px solid var(--border);color:var(--text);font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;text-decoration:none}
+        .header-btn:hover{border-color:var(--blue);color:var(--blue)}
+        .header-btn.probe{border-color:var(--orange);color:var(--orange)}
+        .header-btn.probe:hover{background:var(--orange);color:var(--bg)}
+        .container{max-width:1600px;margin:0 auto;padding:16px}
+        .tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid var(--border)}
+        .tab{padding:10px 20px;background:var(--panel);border:1px solid var(--border);border-bottom:none;color:var(--muted);font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;border-radius:4px 4px 0 0;text-transform:uppercase;letter-spacing:1px}
+        .tab:hover{color:var(--text)}
+        .tab.active{background:var(--card);color:var(--blue);border-color:var(--blue);border-bottom:2px solid var(--bg);margin-bottom:-2px}
+        .tab-content{display:none}.tab-content.active{display:block}
+        .section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--blue);margin:20px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+        .section-title:first-child{margin-top:0}
+        .card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:12px}
+        .card h3{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px}
+        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+        .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+        .stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(42,42,78,0.3)}
+        .stat-row:last-child{border-bottom:none}
+        .stat-label{color:var(--muted)}.stat-value{font-weight:600;color:var(--blue)}
+        .stat-value.good{color:var(--green)}.stat-value.warn{color:var(--yellow)}.stat-value.bad{color:var(--red)}.stat-value.na{color:var(--muted);font-style:italic}
+        .big-number{text-align:center;padding:16px}
+        .big-number .value{font-size:36px;font-weight:700;color:var(--blue)}
+        .big-number .label{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-top:4px}
+        .big-number .sub{font-size:10px;color:var(--muted);margin-top:2px}
+        .tunnel-table{width:100%;border-collapse:collapse;font-size:10px}
+        .tunnel-table th{text-align:left;padding:8px 10px;background:var(--bg);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border)}
+        .tunnel-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+        .tunnel-table tr:hover{background:rgba(0,212,255,0.03)}
+        .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+        .status-dot.up{background:var(--green);box-shadow:0 0 6px var(--green)}
+        .status-dot.stale{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+        .status-dot.down{background:var(--red);box-shadow:0 0 6px var(--red)}
+        .badge-sm{display:inline-block;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:600}
+        .badge-sm.ctrl-a{background:rgba(0,212,255,0.15);color:var(--blue)}
+        .badge-sm.ctrl-b{background:rgba(123,44,191,0.15);color:var(--purple)}
+        .badge-sm.good{background:rgba(0,255,136,0.15);color:var(--green)}
+        .badge-sm.warn{background:rgba(255,170,0,0.15);color:var(--yellow)}
+        .badge-sm.bad{background:rgba(255,68,68,0.15);color:var(--red)}
+        .active-path-banner{background:linear-gradient(135deg,rgba(0,255,136,0.05),rgba(0,212,255,0.05));border:1px solid var(--green);border-radius:6px;padding:14px 20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+        .active-path-banner .path-name{font-size:16px;font-weight:700;color:var(--green)}
+        .active-path-banner .path-detail{font-size:10px;color:var(--muted)}
+        .active-path-banner .path-info{display:flex;align-items:center;gap:12px}
+        .active-path-banner.no-src{border-color:var(--orange);background:linear-gradient(135deg,rgba(255,102,0,0.05),rgba(255,170,0,0.05))}
+        .active-path-banner.mismatch{border-color:var(--red);background:linear-gradient(135deg,rgba(255,68,68,0.05),rgba(255,102,0,0.05))}
+        .pct-bar-container{display:flex;align-items:center;gap:8px;margin:4px 0}
+        .pct-bar-label{min-width:30px;font-size:9px;color:var(--muted);text-align:right}
+        .pct-bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+        .pct-bar-fill{height:100%;border-radius:4px;transition:width 0.5s ease}
+        .pct-bar-value{min-width:50px;font-size:10px;font-weight:600}
+        .ns-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+        .ns-card{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px}
+        .ns-card .ns-name{font-weight:700;font-size:11px;margin-bottom:6px}
+        .ns-card .ns-detail{font-size:9px;color:var(--muted);line-height:1.6}
+        .ns-card.healthy{border-left:3px solid var(--green)}.ns-card.unhealthy{border-left:3px solid var(--red)}
+        .refresh-indicator{font-size:9px;color:var(--muted)}.refresh-indicator.loading{color:var(--yellow)}
+        .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>PATHSTEER <span class="accent">DIAGNOSTICS</span></h1>
+    <div class="header-right">
+        <span class="refresh-indicator" id="refresh-status">Last update: --</span>
+        <button class="header-btn probe" onclick="runProbe()">⚡ PROBE ALL</button>
+        <button class="header-btn" onclick="refreshAll()">↻ REFRESH</button>
+        <a href="/" class="header-btn">← DASHBOARD</a>
+    </div>
+</div>
+<div class="container">
+    <div class="active-path-banner" id="active-path-banner">
+        <div class="path-info">
+            <span class="status-dot up"></span>
+            <span class="path-name" id="active-path-name">--</span>
+            <span class="path-detail" id="active-path-detail">Loading...</span>
+        </div>
+        <div>
+            <span class="badge-sm good" id="src-badge">SRC OK</span>
+            <span class="badge-sm good" id="match-badge">ROUTE = DAEMON</span>
+        </div>
+    </div>
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('tunnels',this)">WG Tunnels</button>
+        <button class="tab" onclick="switchTab('failover',this)">Failover Performance</button>
+        <button class="tab" onclick="switchTab('stability',this)">Stability</button>
+        <button class="tab" onclick="switchTab('load',this)">Load & Capacity</button>
+        <button class="tab" onclick="switchTab('namespaces',this)">Namespaces</button>
+    </div>
+
+    <!-- TAB: WG Tunnels -->
+    <div class="tab-content active" id="tab-tunnels">
+        <div class="section-title">All WireGuard Tunnels (12)</div>
+        <table class="tunnel-table"><thead><tr>
+            <th>Status</th><th>Tunnel</th><th>Uplink</th><th>Ctrl</th><th>Endpoint</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Probe RTT</th>
+        </tr></thead><tbody id="tunnel-tbody"><tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px"><span class="spinner"></span> Loading...</td></tr></tbody></table>
+        <div class="section-title" style="margin-top:24px">Tunnel Health Summary</div>
+        <div class="grid-4">
+            <div class="card"><div class="big-number"><div class="value" id="tunnels-up">--</div><div class="label">Tunnels UP</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="tunnels-stale" style="color:var(--yellow)">--</div><div class="label">Stale (>3min)</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="tunnels-down" style="color:var(--red)">--</div><div class="label">Down / No HS</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="total-transfer">--</div><div class="label">Total Transfer</div></div></div>
+        </div>
+    </div>
+
+    <!-- TAB: Failover -->
+    <div class="tab-content" id="tab-failover">
+        <div class="section-title">Failover Performance</div>
+        <div class="grid-3">
+            <div class="card"><h3>Detection Time</h3>
+                <div class="pct-bar-container"><span class="pct-bar-label">P50</span><div class="pct-bar"><div class="pct-bar-fill" id="det-p50-bar" style="width:0%;background:var(--green)"></div></div><span class="pct-bar-value good" id="det-p50">--</span></div>
+                <div class="pct-bar-container"><span class="pct-bar-label">P95</span><div class="pct-bar"><div class="pct-bar-fill" id="det-p95-bar" style="width:0%;background:var(--yellow)"></div></div><span class="pct-bar-value warn" id="det-p95">--</span></div>
+                <div class="pct-bar-container"><span class="pct-bar-label">P99</span><div class="pct-bar"><div class="pct-bar-fill" id="det-p99-bar" style="width:0%;background:var(--orange)"></div></div><span class="pct-bar-value" id="det-p99" style="color:var(--orange)">--</span></div>
+            </div>
+            <div class="card"><h3>Convergence Time</h3>
+                <div class="pct-bar-container"><span class="pct-bar-label">P50</span><div class="pct-bar"><div class="pct-bar-fill" id="conv-p50-bar" style="width:0%;background:var(--green)"></div></div><span class="pct-bar-value good" id="conv-p50">--</span></div>
+                <div class="pct-bar-container"><span class="pct-bar-label">P95</span><div class="pct-bar"><div class="pct-bar-fill" id="conv-p95-bar" style="width:0%;background:var(--yellow)"></div></div><span class="pct-bar-value warn" id="conv-p95">--</span></div>
+                <div class="pct-bar-container"><span class="pct-bar-label">P99</span><div class="pct-bar"><div class="pct-bar-fill" id="conv-p99-bar" style="width:0%;background:var(--orange)"></div></div><span class="pct-bar-value" id="conv-p99" style="color:var(--orange)">--</span></div>
+            </div>
+            <div class="card"><h3>Summary</h3>
+                <div class="stat-row"><span class="stat-label">Tests Executed</span><span class="stat-value" id="fo-total">0</span></div>
+                <div class="stat-row"><span class="stat-label">Success Rate</span><span class="stat-value good" id="fo-success">--%</span></div>
+                <div class="stat-row"><span class="stat-label">Worst Observed</span><span class="stat-value warn" id="fo-worst">-- ms</span></div>
+            </div>
+        </div>
+        <div class="section-title">Recent Failover Events</div>
+        <div class="card"><table class="tunnel-table"><thead><tr><th>Time</th><th>From</th><th>To</th><th>Detection</th><th>Convergence</th><th>Total</th><th>Result</th></tr></thead>
+        <tbody id="failover-tbody"><tr><td colspan="7" style="text-align:center;color:var(--muted);padding:14px">No failover events recorded yet</td></tr></tbody></table></div>
+        <div class="section-title">Session Preservation (RTP)</div>
+        <div class="grid-3">
+            <div class="card"><div class="big-number"><div class="value good" id="sessions-preserved">--%</div><div class="label">Sessions Preserved</div></div></div>
+            <div class="card"><h3>Packet Loss During Failover</h3>
+                <div class="stat-row"><span class="stat-label">P50</span><span class="stat-value good" id="loss-p50">-- pkt</span></div>
+                <div class="stat-row"><span class="stat-label">P95</span><span class="stat-value warn" id="loss-p95">-- pkt</span></div>
+                <div class="stat-row"><span class="stat-label">P99</span><span class="stat-value" id="loss-p99">-- pkt</span></div>
+            </div>
+            <div class="card"><h3>Jitter Spike During Failover</h3>
+                <div class="stat-row"><span class="stat-label">P50</span><span class="stat-value good" id="jitter-p50">-- ms</span></div>
+                <div class="stat-row"><span class="stat-label">P95</span><span class="stat-value warn" id="jitter-p95">-- ms</span></div>
+                <div class="stat-row"><span class="stat-label">P99</span><span class="stat-value" id="jitter-p99">-- ms</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB: Stability -->
+    <div class="tab-content" id="tab-stability">
+        <div class="section-title">Stability & Reliability</div>
+        <div class="grid-4">
+            <div class="card"><div class="big-number"><div class="value good" id="availability">--%</div><div class="label">Availability</div><div class="sub" id="uptime-display">--</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="mtbf">--</div><div class="label">MTBF</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="mttr">--</div><div class="label">MTTR</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="total-failures" style="color:var(--yellow)">0</div><div class="label">Total Failures</div></div></div>
+        </div>
+        <div class="grid-2">
+            <div class="card"><h3>Route Health</h3>
+                <div class="stat-row"><span class="stat-label">Route Flaps</span><span class="stat-value" id="route-flaps">0</span></div>
+                <div class="stat-row"><span class="stat-label">Oscillation Events</span><span class="stat-value" id="oscillations">0</span></div>
+            </div>
+            <div class="card"><h3>System Health</h3>
+                <div class="stat-row"><span class="stat-label">Memory Leak Detection</span><span class="stat-value na">Monitoring...</span></div>
+                <div class="stat-row"><span class="stat-label">Thread Deadlocks</span><span class="stat-value good">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB: Load -->
+    <div class="tab-content" id="tab-load">
+        <div class="section-title">Load & Capacity</div>
+        <div class="grid-4">
+            <div class="card"><div class="big-number"><div class="value" id="cpu-pct">--%</div><div class="label">CPU Usage</div><div class="sub" id="cpu-load">Load: --</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="mem-pct">--%</div><div class="label">Memory</div><div class="sub" id="mem-detail">-- / -- MB</div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="throughput-val">--</div><div class="label">Throughput (Mbps)</div><div class="sub">↓ <span id="tp-down">--</span> ↑ <span id="tp-up">--</span></div></div></div>
+            <div class="card"><div class="big-number"><div class="value" id="sessions-count">0</div><div class="label">Active Sessions</div></div></div>
+        </div>
+    </div>
+
+    <!-- TAB: Namespaces -->
+    <div class="tab-content" id="tab-namespaces">
+        <div class="section-title">Namespace Health</div>
+        <div class="ns-grid" id="ns-grid"><div class="ns-card"><div class="ns-name"><span class="spinner"></span> Loading...</div></div></div>
+    </div>
+</div>
+
+<script>
+function switchTab(tab, el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+tab).classList.add('active');el.classList.add('active')}
+function setEl(id,val){const el=document.getElementById(id);if(el)el.textContent=val}
+function setBar(id,val,max){const el=document.getElementById(id);if(el)el.style.width=Math.min(100,((val||0)/max)*100)+'%'}
+function formatBytes(b){if(b>=1073741824)return(b/1073741824).toFixed(1)+' GiB';if(b>=1048576)return(b/1048576).toFixed(1)+' MiB';if(b>=1024)return(b/1024).toFixed(0)+' KiB';return b+' B'}
+
+async function fetchDiagnostics(probe=false){
+    const s=document.getElementById('refresh-status');s.textContent='Loading...';s.className='refresh-indicator loading';
+    try{const r=await fetch(probe?'/api/diagnostics?probe=true':'/api/diagnostics/wg');const d=await r.json();renderTunnels(d.tunnels||[]);s.textContent='Updated: '+new Date().toLocaleTimeString();s.className='refresh-indicator'}
+    catch(e){s.textContent='Error: '+e.message;s.className='refresh-indicator'}}
+
+async function fetchActivePath(){try{const r=await fetch('/api/diagnostics/quick');renderActivePath(await r.json())}catch(e){}}
+async function fetchMetrics(){try{const r=await fetch('/api/metrics');renderMetrics(await r.json())}catch(e){}}
+async function fetchNamespaces(){try{const r=await fetch('/api/diagnostics');const d=await r.json();if(d.namespaces)renderNamespaces(d.namespaces)}catch(e){}}
+
+function renderTunnels(tunnels){
+    const tbody=document.getElementById('tunnel-tbody');
+    if(!tunnels.length){tbody.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">No tunnel data</td></tr>';return}
+    let up=0,stale=0,down=0,totalRx=0,totalTx=0;
+    tbody.innerHTML=tunnels.map(t=>{
+        const st=t.status||'unknown';const dc=st==='UP'?'up':st==='STALE'?'stale':'down';
+        if(st==='UP')up++;else if(st==='STALE')stale++;else down++;
+        totalRx+=t.rx_bytes||0;totalTx+=t.tx_bytes||0;
+        const cc=t.controller==='A'?'ctrl-a':'ctrl-b';
+        const hc=t.last_handshake_sec<0?'bad':t.last_handshake_sec>180?'warn':'good';
+        const pv=t.probe_rtt_ms!==undefined&&t.probe_rtt_ms!==null?(typeof t.probe_rtt_ms==='number'?`<span class="stat-value ${t.probe_rtt_ms>100?'warn':'good'}">${t.probe_rtt_ms} ms</span>`:`<span class="stat-value bad">${t.probe_rtt_ms}</span>`):'<span class="stat-value na">--</span>';
+        return `<tr><td><span class="status-dot ${dc}"></span>${st}</td><td style="font-weight:600">${t.tunnel}</td><td>${t.uplink_label||t.uplink||'--'}</td><td><span class="badge-sm ${cc}">CTRL-${t.controller}</span></td><td style="font-size:9px">${t.endpoint||'--'}</td><td><span class="stat-value ${hc}">${t.last_handshake_display||'--'}</span></td><td>${t.rx_display||'--'}</td><td>${t.tx_display||'--'}</td><td>${pv}</td></tr>`
+    }).join('');
+    setEl('tunnels-up',up);setEl('tunnels-stale',stale);setEl('tunnels-down',down);setEl('total-transfer',formatBytes(totalRx+totalTx))}
+
+function renderActivePath(d){
+    const b=document.getElementById('active-path-banner');const labels={fa:'Fiber A',fb:'Fiber B',sl_a:'Starlink A',sl_b:'Starlink B',cell_a:'T-Mobile',cell_b:'AT&T'};
+    const u=d.active_from_route||'unknown';setEl('active-path-name',(labels[u]||u).toUpperCase());setEl('active-path-detail',d.ns_vip_default||'');
+    b.className='active-path-banner';const sb=document.getElementById('src-badge');const mb=document.getElementById('match-badge');
+    if(!d.has_src){b.classList.add('no-src');sb.textContent='⚠ MISSING SRC';sb.className='badge-sm bad'}else{sb.textContent='✓ SRC OK';sb.className='badge-sm good'}
+    if(!d.match){b.classList.add('mismatch');mb.textContent='⚠ ROUTE ≠ DAEMON ('+d.daemon_says+')';mb.className='badge-sm warn'}else{mb.textContent='✓ ROUTE = DAEMON';mb.className='badge-sm good'}}
+
+function renderMetrics(d){
+    const fo=d.failover||{};const st=d.stability||{};const ld=d.load||{};
+    setEl('det-p50',fo.detection_p50?fo.detection_p50+' ms':'--');setEl('det-p95',fo.detection_p95?fo.detection_p95+' ms':'--');setEl('det-p99',fo.detection_p99?fo.detection_p99+' ms':'--');
+    setEl('conv-p50',fo.convergence_p50?fo.convergence_p50+' ms':'--');setEl('conv-p95',fo.convergence_p95?fo.convergence_p95+' ms':'--');setEl('conv-p99',fo.convergence_p99?fo.convergence_p99+' ms':'--');
+    setEl('fo-total',fo.total_tests||0);setEl('fo-success',(fo.success_rate||0)+'%');setEl('fo-worst',(fo.worst_total_ms||0)+' ms');
+    setBar('det-p50-bar',fo.detection_p50,500);setBar('det-p95-bar',fo.detection_p95,500);setBar('det-p99-bar',fo.detection_p99,500);
+    setBar('conv-p50-bar',fo.convergence_p50,500);setBar('conv-p95-bar',fo.convergence_p95,500);setBar('conv-p99-bar',fo.convergence_p99,500);
+    if(fo.last_10&&fo.last_10.length){document.getElementById('failover-tbody').innerHTML=fo.last_10.slice().reverse().map(e=>{const t=new Date(e.timestamp*1000).toLocaleTimeString();const tot=(e.detection_ms+e.convergence_ms).toFixed(0);const c=e.success?'good':'bad';return`<tr><td>${t}</td><td>${(e.from||'--').toUpperCase()}</td><td>${(e.to||'--').toUpperCase()}</td><td>${e.detection_ms} ms</td><td>${e.convergence_ms} ms</td><td style="font-weight:700">${tot} ms</td><td><span class="badge-sm ${c}">${e.success?'OK':'FAIL'}</span></td></tr>`}).join('')}
+    setEl('availability',(st.availability_pct||0).toFixed(2)+'%');setEl('uptime-display','Uptime: '+(st.uptime_display||'--'));
+    setEl('mtbf',st.mtbf_display||'--');setEl('mttr',st.mttr_display||'--');setEl('total-failures',st.total_failures||0);
+    setEl('route-flaps',st.route_flaps||0);setEl('oscillations',st.oscillation_events||0);
+    const cp=ld.cpu_pct||0;setEl('cpu-pct',cp.toFixed(1)+'%');document.getElementById('cpu-pct').style.color=cp>80?'var(--red)':cp>50?'var(--yellow)':'var(--green)';
+    setEl('cpu-load','Load: '+(ld.load_1m||0).toFixed(2)+' / '+(ld.load_5m||0).toFixed(2)+' / '+(ld.load_15m||0).toFixed(2));
+    const mp=ld.mem_pct||0;setEl('mem-pct',mp.toFixed(1)+'%');document.getElementById('mem-pct').style.color=mp>85?'var(--red)':mp>65?'var(--yellow)':'var(--green)';
+    setEl('mem-detail',(ld.mem_used_mb||0)+' / '+(ld.mem_total_mb||0)+' MB')}
+
+function renderNamespaces(ns){
+    document.getElementById('ns-grid').innerHTML=Object.entries(ns).map(([n,i])=>{
+        const h=i.exists&&i.ipv4_forward===1;
+        return`<div class="ns-card ${h?'healthy':'unhealthy'}"><div class="ns-name">${n}</div><div class="ns-detail">Status: ${i.exists?'<span style="color:var(--green)">EXISTS</span>':'<span style="color:var(--red)">MISSING</span>'}<br>Interfaces UP: ${i.ifaces_up||0}<br>IPv4 Forward: ${i.ipv4_forward?'✓':'✗'}<br>IPv6 Forward: ${i.ipv6_forward?'✓':'✗'}<br>NAT4 Rules: ${i.nat_rules||0}<br>NAT6 Rules: ${i.nat6_rules||0}</div></div>`}).join('')}
+
+async function refreshAll(){await Promise.all([fetchDiagnostics(),fetchActivePath(),fetchMetrics(),fetchNamespaces()])}
+async function runProbe(){const b=event.target;b.textContent='⏳ Probing...';b.disabled=true;await fetchDiagnostics(true);b.textContent='⚡ PROBE ALL';b.disabled=false}
+refreshAll();setInterval(()=>{fetchActivePath();fetchMetrics()},10000);setInterval(()=>fetchDiagnostics(false),15000);setInterval(()=>fetchNamespaces(),60000);
+</script>
+</body>
+</html>
