@@ -7,7 +7,7 @@
 # Usage: controller-route-switch.sh <uplink_name>
 ###############################################################################
 UPLINK="$1"
-SERVICE_PREFIX="104.204.136.48/28"
+SERVICE_PREFIX="104.204.138.48/28"
 CTRL_A="pathsteer@104.204.136.13"
 CTRL_B="pathsteer@104.204.136.14"
 SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no"

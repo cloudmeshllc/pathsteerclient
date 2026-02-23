@@ -945,6 +945,9 @@ static const char* UPLINK_TABLES[] = {
 static const char* VIP_DEVS[] = {
     "vip_cell_a", "vip_cell_b", "vip_sl_a", "vip_sl_b", "vip_fa", "vip_fb"
 };
+static const char* VIP_GWS6[] = {
+    "fd10:0:0:5::2", "fd10:0:0:6::2", "fd10:0:0:3::2", "fd10:0:0:4::2", "fd10:0:0:1::2", "fd10:0:0:2::2"
+};
 static const char* VIP_GWS[] = {
     "10.201.10.18", "10.201.10.22", "10.201.10.10", "10.201.10.14", "10.201.10.2", "10.201.10.6"
 };
@@ -983,6 +986,11 @@ static void execute_switch(uplink_id_t target) {
         return;
     }
     
+    /* Step 2b: Switch IPv6 default route in ns_vip */
+    snprintf(cmd, sizeof(cmd),
+        "ip netns exec ns_vip ip -6 route replace default via %s dev %s src 2602:f644:10:1::50",
+        VIP_GWS6[target], VIP_DEVS[target]);
+    system(cmd);
     /* Step 3: Switch controller return route (async, don't block) */
     snprintf(cmd, sizeof(cmd),
         "/opt/pathsteer/scripts/controller-route-switch.sh %s &",

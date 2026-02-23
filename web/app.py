@@ -70,19 +70,11 @@ def get_throughput():
         if iface.startswith("vip_"):
             fields = data.split()
             curr[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
-    # Only count the active vip veth (from daemon status)
-    active_dev = None
-    try:
-        import json as _j
-        with open('/run/pathsteer/status.json') as _sf:
-            _st = _j.load(_sf)
-            _aul = _st.get('active_uplink','')
-            _map = {'fa':'vip_fa','fb':'vip_fb','sl_a':'vip_sl_a','sl_b':'vip_sl_b','cell_a':'vip_cell_a','cell_b':'vip_cell_b'}
-            active_dev = _map.get(_aul)
-    except: pass
-    if active_dev and active_dev in curr:
-        total_rx = curr[active_dev]["rx"]
-        total_tx = curr[active_dev]["tx"]
+    # Use vip_wifi_i: TX=download (to clients), RX=upload (from clients)
+    wifi = curr.get('vip_wifi_i')
+    if wifi:
+        total_rx = wifi['tx']   # download = TX towards WiFi clients
+        total_tx = wifi['rx']   # upload = RX from WiFi clients
     else:
         total_rx = sum(v["rx"] for v in curr.values())
         total_tx = sum(v["tx"] for v in curr.values())
@@ -360,7 +352,7 @@ def api_chaos_inject():
     with open(chaos_file, 'w') as f:
         json.dump(chaos_state, f)
     
-    return jsonify({'status': 'ok', 'uplink': uplink, 'chaos': chaos_state[uplink]})
+    return jsonify({'status': 'ok', 'chaos': chaos_state})
 
 @app.route('/api/chaos/reset', methods=['POST'])
 def api_chaos_reset():
