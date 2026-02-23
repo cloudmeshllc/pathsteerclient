@@ -1,2015 +1,1040 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PathSteer Guardian</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        :root {
-            --bg: #0a0a0f;
-            --panel: #12121a;
-            --card: #1a1a2e;
-            --border: #2a2a4e;
-            --text: #e0e0e0;
-            --muted: #666;
-            --blue: #00d4ff;
-            --purple: #7b2cbf;
-            --green: #00ff88;
-            --yellow: #ffaa00;
-            --orange: #ff6600;
-            --red: #ff4444;
-            --sl-blue: #1DA1F2;
-            --tmo-magenta: #E20074;
-            --att-blue: #00A8E0;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'SF Mono', 'Fira Code', monospace; 
-            background: var(--bg); 
-            color: var(--text); 
-            font-size: 11px;
-            overflow: hidden;
-        }
-        
-        .dashboard {
-            display: grid;
-            grid-template-columns: 260px 1fr 280px 260px;
-            grid-template-rows: 48px minmax(300px, 1fr) 180px;
-            height: 100vh;
-            gap: 1px;
-            background: var(--border);
-        }
-        
-        /* Header */
-        .header {
-            grid-column: 1 / -1;
-            background: linear-gradient(90deg, var(--panel), #1a1a30);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 16px;
-        }
-        .logo { display: flex; align-items: center; gap: 10px; }
-        .logo h1 { font-size: 14px; font-weight: 700; letter-spacing: 2px; }
-        .logo .g { color: var(--blue); }
-        
-        .badges { display: flex; gap: 10px; align-items: center; }
-        .badge {
-            padding: 5px 12px;
-            border-radius: 3px;
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .mode-training { background: rgba(0,212,255,0.15); color: var(--blue); border: 1px solid var(--blue); }
-        .mode-tripwire { background: rgba(255,170,0,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
-        .mode-mirror { background: rgba(0,255,136,0.15); color: var(--green); border: 1px solid var(--green); }
-        .state-normal { background: rgba(0,255,136,0.1); color: var(--green); }
-        .state-prepare { background: rgba(255,170,0,0.1); color: var(--yellow); animation: pulse 1.5s infinite; }
-        .state-protect { background: rgba(255,102,0,0.15); color: var(--orange); animation: pulse 0.8s infinite; }
-        .state-switching { background: rgba(255,68,68,0.15); color: var(--red); animation: pulse 0.5s infinite; }
-        .state-holding { background: rgba(123,44,191,0.15); color: var(--purple); }
-        .state-offline { background: rgba(100,100,100,0.2); color: #666; }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-        
-        .speed-display {
-            font-size: 24px;
-            font-weight: 700;
-            color: var(--blue);
-            display: flex;
-            align-items: baseline;
-            gap: 4px;
-        }
-        .speed-display .unit { font-size: 11px; color: var(--muted); }
-        
-        /* Panels */
-        .panel { background: var(--panel); padding: 10px; overflow-y: auto; }
-        .panel h2 {
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: var(--muted);
-            margin-bottom: 8px;
-            padding-bottom: 4px;
-            border-bottom: 1px solid var(--border);
-        }
-        
-        /* Training Banner */
-        .training-banner {
-            background: repeating-linear-gradient(45deg, var(--card), var(--card) 10px, var(--bg) 10px, var(--bg) 20px);
-            border: 2px solid var(--blue);
-            padding: 8px;
-            text-align: center;
-            font-weight: 700;
-            color: var(--blue);
-            margin-bottom: 10px;
-            display: none;
-        }
-        .training-banner.active { display: block; }
-        
-        /* Uplink Cards */
-        .uplink-card { position: relative;
-            background: var(--card);
-            border-radius: 4px;
-            padding: 8px;
-            margin-bottom: 6px;
-            border: 2px solid var(--border);
-            position: relative;
-            transition: all 0.2s;
-        }
-        .uplink-card.active { border-color: var(--green); box-shadow: 0 0 12px rgba(0,255,136,0.2); }
-        .uplink-card.active::after {
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PathSteer Guardian</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+    --bg:#0a0a0f;--panel:#12121a;--card:#1a1a2e;--border:#2a2a4e;
+    --text:#e0e0e0;--muted:#666;--dim:#444;
+    --blue:#00d4ff;--purple:#7b2cbf;--green:#00ff88;
+    --yellow:#ffaa00;--orange:#ff6600;--red:#ff4444;
+    --sl-blue:#1DA1F2;--tmo-magenta:#E20074;--att-blue:#00A8E0;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg);color:var(--text);font-size:11px;overflow:hidden}
 
-            content: '● ACTIVE';
-        
-            position: absolute;
-        
-            top: 6px;
-        
-            right: 8px;
-        
-            font-size: 8px;
-        
-            color: var(--green);
-        
-            animation: blink 1s infinite;
-        
-        }
-        
-        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .uplink-card.unavailable { opacity: 0.4; }
-        .uplink-card[data-rank]::before {
-            position: absolute;
-            top: 6px;
-            right: 50px;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 3px;
-            z-index: 10;
-        }
-        .uplink-card[data-rank="1"]::before {
-            content: "NEXT " attr(data-prob);
-            background: var(--yellow);
-            color: #000;
-        }
-        .uplink-card[data-rank="2"]::before {
-            content: "2ND " attr(data-prob);
-            background: #555;
-            color: #ccc;
-        }
-        .uplink-card[data-rank="3"]::before {
-            content: "3RD " attr(data-prob);
-            background: #333;
-            color: #999;
-        }
-        .uplink-card.next-best { border-color: var(--yellow); box-shadow: 0 0 8px rgba(247,220,111,0.3); }
+/* ═══ GRID LAYOUT ═══ */
+.dashboard{
+    display:grid;
+    grid-template-columns:250px 1fr 260px;
+    grid-template-rows:44px 1fr;
+    height:100vh;gap:1px;background:var(--border);
+}
 
-        .uplink-card.lte { border-left: 3px solid var(--tmo-magenta); }
-        .uplink-card.lte.att { border-left-color: var(--att-blue); }
-        .uplink-card.starlink { border-left: 3px solid var(--sl-blue); }
-        .uplink-card.fiber { border-left: 3px solid var(--green); }
-        
-        .uplink-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-        .uplink-name { font-weight: 700; font-size: 11px; }
-        .uplink-type { font-size: 9px; color: var(--muted); }
-        
-        .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
-        .metric {
-            background: var(--bg);
-            padding: 4px;
-            border-radius: 2px;
-            text-align: center;
-        }
-        .metric-label { font-size: 8px; color: var(--muted); text-transform: uppercase; }
-        .metric-value { font-size: 11px; font-weight: 600; color: var(--blue); }
-        .metric-value.warn { color: var(--yellow); }
-        .metric-value.bad { color: var(--red); }
-        
-        .sparkline {
-            height: 16px;
-            background: var(--bg);
-            border-radius: 2px;
-            margin-top: 4px;
-            display: flex;
-            align-items: flex-end;
-            overflow: hidden;
-        }
-        .spark-bar {
-            flex: 1;
-            background: var(--blue);
-            margin: 0 1px;
-            min-height: 1px;
-            transition: height 0.1s;
-        }
-        .spark-bar.warn { background: var(--yellow); }
-        .spark-bar.bad { background: var(--red); }
-        
-        .uplink-actions { margin-top: 6px; display: flex; gap: 4px; }
-        .btn-fail {
-            flex: 1;
-            padding: 4px;
-            background: transparent;
-            border: 1px solid var(--red);
-            color: var(--red);
-            font-size: 8px;
-            border-radius: 2px;
-            cursor: pointer;
-            text-transform: uppercase;
-        }
-        .btn-fail:hover { background: var(--red); color: var(--bg); }
-        
-        /* GPS Panel */
-        .gps-panel {
-            background: var(--card);
-            padding: 8px;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
-        .gps-coords { font-family: monospace; color: var(--blue); font-size: 12px; }
-        .gps-meta { font-size: 9px; color: var(--muted); margin-top: 4px; }
-        
-        /* Risk Gauge */
-        .risk-panel {
-            background: var(--card);
-            padding: 8px;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
-        .risk-header { display: flex; justify-content: space-between; align-items: center; }
-        .risk-value { font-size: 20px; font-weight: 700; }
-        .risk-rec { font-size: 10px; padding: 3px 8px; border-radius: 2px; }
-        .risk-bar { height: 6px; background: var(--bg); border-radius: 3px; margin-top: 6px; overflow: hidden; }
-        .risk-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); transition: width 0.3s; }
-        
-        /* Map */
-        .map-panel { position: relative; }
-        #map { height: 100%; background: var(--bg); }
-        .map-legend {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(18,18,26,0.95);
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 9px;
-            z-index: 1000;
-        }
-        .legend-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
-        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
-        
-        /* Right Panel */
-        .countdown-panel {
-            background: linear-gradient(135deg, rgba(255,102,0,0.1), rgba(255,170,0,0.05));
-            border: 1px solid var(--orange);
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 10px;
-            text-align: center;
-            display: none;
-        }
-        .countdown-panel.active { display: block; }
-        .countdown-title { font-weight: 700; font-size: 11px; }
-        .countdown-trigger { font-size: 9px; color: var(--yellow); margin-top: 4px; }
-        .countdown-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-        .countdown-item { text-align: center; }
-        .countdown-num { font-size: 22px; font-weight: 700; color: var(--orange); }
-        .countdown-label { font-size: 8px; color: var(--muted); text-transform: uppercase; }
-        
-        .flap-banner {
-            background: rgba(123,44,191,0.2);
-            border: 1px solid var(--purple);
-            padding: 6px;
-            border-radius: 4px;
-            text-align: center;
-            font-size: 9px;
-            color: var(--purple);
-            margin-bottom: 8px;
-            display: none;
-        }
-        .flap-banner.active { display: block; }
-        
-        /* Controls */
-        .control-group { margin-bottom: 10px; }
-        .btn-row { display: flex; gap: 4px; }
-        .btn {
-            flex: 1;
-            padding: 8px 4px;
-            background: var(--card);
-            border: 1px solid var(--border);
-            color: var(--text);
-            font-size: 9px;
-            font-weight: 600;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .btn:hover { background: var(--border); }
-        .btn.active { background: var(--blue); color: var(--bg); border-color: var(--blue); }
-        .btn.danger { border-color: var(--red); color: var(--red); }
-        .btn.danger:hover { background: var(--red); color: var(--bg); }
-        .btn-wide { width: 100%; }
-        
-        /* Decision Feed */
-        .feed { max-height: 200px; overflow-y: auto; }
-        .feed-item {
-            background: var(--card);
-            padding: 6px;
-            margin-bottom: 3px;
-            border-radius: 3px;
-            font-size: 9px;
-            border-left: 2px solid var(--border);
-        }
-        .feed-item.tripwire { border-left-color: var(--orange); background: rgba(255,102,0,0.05); }
-        .feed-item.switch { border-left-color: var(--purple); }
-        .feed-item.predict { border-left-color: var(--blue); }
-        .feed-item.mode { border-left-color: var(--green); }
-        .feed-time { color: var(--muted); font-size: 8px; }
-        .feed-msg { margin-top: 2px; }
-        .feed-reason { color: var(--yellow); }
-        
-        /* Controller Panel */
-        .controller-panel {
-            background: var(--card);
-            padding: 8px;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
-        .ctrl-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
-        .ctrl-label { font-size: 9px; color: var(--muted); }
-        .ctrl-value { font-size: 10px; color: var(--blue); }
-        .ctrl-value.active { color: var(--green); }
-        
-        /* Remote Targets */
-        .targets-panel { font-size: 9px; color: var(--muted); }
-        .target-row { display: flex; justify-content: space-between; margin: 2px 0; }
-        .target-status { color: var(--green); }
-        .target-status.offline { color: var(--red); }
+/* ═══ HEADER ═══ */
+.header{
+    grid-column:1/-1;background:linear-gradient(90deg,var(--panel),#1a1a30);
+    display:flex;justify-content:space-between;align-items:center;padding:0 14px;
+}
+.logo{display:flex;align-items:center;gap:8px}
+.logo h1{font-size:13px;font-weight:700;letter-spacing:2px}
+.logo .g{color:var(--blue)}
+.hdr-center{display:flex;align-items:center;gap:10px}
+.badge{padding:4px 10px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.mode-training{background:rgba(0,212,255,0.15);color:var(--blue);border:1px solid var(--blue)}
+.mode-tripwire{background:rgba(255,170,0,0.15);color:var(--yellow);border:1px solid var(--yellow)}
+.mode-mirror{background:rgba(0,255,136,0.15);color:var(--green);border:1px solid var(--green)}
+.st-normal{background:rgba(0,255,136,0.08);color:var(--green)}
+.st-prepare{background:rgba(255,170,0,0.1);color:var(--yellow);animation:pulse 1.5s infinite}
+.st-protect{background:rgba(255,102,0,0.12);color:var(--orange);animation:pulse .8s infinite}
+.st-switching{background:rgba(255,68,68,0.12);color:var(--red);animation:pulse .5s infinite}
+.st-holding{background:rgba(123,44,191,0.12);color:var(--purple)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
 
-        /* Event Log Panel */
-        .event-log { grid-row: 3; min-height: 180px;
-            grid-column: 1 / -1;
-            background: var(--panel);
-            border-top: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-        }
-        .event-log-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 12px;
-            background: var(--card);
-            border-bottom: 1px solid var(--border);
-        }
-        .event-log-header h3 {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--muted);
-        }
-        .event-log-controls {
-            display: flex;
-            gap: 8px;
-        }
-        .event-log-controls button {
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--muted);
-            padding: 2px 8px;
-            font-size: 9px;
-            cursor: pointer;
-            border-radius: 2px;
-        }
-        .event-log-controls button:hover { border-color: var(--blue); color: var(--blue); }
-        .event-log-controls button.active { border-color: var(--blue); color: var(--blue); background: rgba(0,212,255,0.1); }
-        .event-log-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 8px 12px;
-            font-family: monospace;
-            font-size: 10px;
-        }
-        .log-entry {
-            padding: 2px 0;
-            border-bottom: 1px solid rgba(42,42,78,0.3);
-            display: flex;
-            gap: 12px;
-        }
-        .log-time { color: var(--muted); min-width: 90px; }
-        .log-level { min-width: 60px; font-weight: 600; }
-        .log-level.info { color: var(--blue); }
-        .log-level.warn { color: var(--yellow); }
-        .log-level.error { color: var(--red); }
-        .log-level.switch { color: var(--green); }
-        .log-level.trigger { color: var(--orange); }
-        .log-msg { color: var(--text); flex: 1; }
-        .log-gps { color: var(--muted); font-size: 9px; }
+.speed-display{font-size:20px;font-weight:700;color:var(--blue);display:flex;align-items:baseline;gap:3px}
+.speed-display .unit{font-size:10px;color:var(--muted)}
 
-        /* Signal Bars */
-        .signal-bars {
-            display: inline-flex;
-            align-items: flex-end;
-            gap: 1px;
-            height: 12px;
-            margin-left: 4px;
-            vertical-align: middle;
-        }
-        .signal-bar {
-            width: 3px;
-            background: var(--muted);
-            border-radius: 1px;
-        }
-        .signal-bar.active { background: var(--green); }
-        .signal-bar.warn { background: var(--yellow); }
-        .signal-bar.bad { background: var(--red); }
-        .signal-bar:nth-child(1) { height: 3px; }
-        .signal-bar:nth-child(2) { height: 5px; }
-        .signal-bar:nth-child(3) { height: 8px; }
-        .signal-bar:nth-child(4) { height: 11px; }
-        
-        /* Obstruction Indicator */
-        .obstr-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-left: 4px;
-            vertical-align: middle;
-        }
-        .obstr-indicator.clear { background: var(--green); box-shadow: 0 0 4px var(--green); }
-        .obstr-indicator.obstructed { background: var(--red); box-shadow: 0 0 4px var(--red); animation: pulse 0.5s infinite; }
+.hdr-right{display:flex;gap:6px;align-items:center}
+.hdr-btn{padding:4px 10px;background:var(--card);border:1px solid var(--border);color:var(--text);
+    font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px;text-decoration:none}
+.hdr-btn:hover{border-color:var(--blue);color:var(--blue)}
+.hdr-btn.accent{border-color:var(--orange);color:var(--orange)}
+.hdr-btn.accent:hover{background:var(--orange);color:#000}
 
-        /* Signal Bars */
-        .signal-bars {
-            display: inline-flex;
-            align-items: flex-end;
-            gap: 1px;
-            height: 12px;
-            margin-left: 4px;
-            vertical-align: middle;
-        }
-        .signal-bar {
-            width: 3px;
-            background: var(--muted);
-            border-radius: 1px;
-        }
-        .signal-bar.active { background: var(--green); }
-        .signal-bar.warn { background: var(--yellow); }
-        .signal-bar.bad { background: var(--red); }
-        .signal-bar:nth-child(1) { height: 3px; }
-        .signal-bar:nth-child(2) { height: 5px; }
-        .signal-bar:nth-child(3) { height: 8px; }
-        .signal-bar:nth-child(4) { height: 11px; }
-        
-        /* Obstruction Indicator */
-        .obstr-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-left: 4px;
-            vertical-align: middle;
-        }
-        .obstr-indicator.clear { background: var(--green); box-shadow: 0 0 4px var(--green); }
-        .obstr-indicator.obstructed { background: var(--red); box-shadow: 0 0 4px var(--red); animation: pulse 0.5s infinite; }
+/* ═══ LEFT PANE — UPLINKS ═══ */
+.left-pane{background:var(--panel);overflow-y:auto;display:flex;flex-direction:column}
+.pane-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);
+    padding:8px 10px 4px;border-bottom:1px solid var(--border)}
+.uplinks-list{flex:1;overflow-y:auto;padding:6px 8px}
 
-        /* Stats Panel */
-        .stats-panel {
-            background: var(--panel);
-            padding: 10px;
-            overflow-y: auto;
-        }
-        .stat-card {
-            background: var(--card);
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 8px;
-        }
-        .stat-card h3 {
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--muted);
-            margin-bottom: 8px;
-        }
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .stat-row:last-child { border-bottom: none; }
-        .stat-label { color: var(--muted); font-size: 10px; }
-        .stat-value { color: var(--blue); font-size: 11px; font-weight: 600; }
-        .stat-value.good { color: var(--green); }
-        .stat-value.warn { color: var(--yellow); }
-        .stat-value.bad { color: var(--red); }
-        
-        .big-stat {
-            text-align: center;
-            padding: 12px;
-        }
-        .big-stat-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--blue);
-        }
-        .big-stat-label {
-            font-size: 9px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .throughput-bar {
-            height: 6px;
-            background: var(--bg);
-            border-radius: 3px;
-            margin-top: 4px;
-            overflow: hidden;
-        }
-        .throughput-fill { transition: width 0.8s ease;
-            height: 100%;
-            background: linear-gradient(90deg, var(--blue), var(--green));
-            border-radius: 3px;
-            transition: width 0.3s;
-        }
+/* Uplink Cards */
+.uplink-card{background:var(--card);border-radius:4px;padding:7px 8px;margin-bottom:5px;
+    border:2px solid var(--border);position:relative;transition:all .2s;cursor:default}
+.uplink-card.active{border-color:var(--green);box-shadow:0 0 10px rgba(0,255,136,.15)}
+.uplink-card.active::after{content:'● ACTIVE';position:absolute;top:5px;right:7px;
+    font-size:7px;color:var(--green);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.uplink-card.unavailable{opacity:.35}
+.uplink-card.disabled-uplink{opacity:.4}
+.uplink-card.lte{border-left:3px solid var(--tmo-magenta)}
+.uplink-card.lte.att{border-left-color:var(--att-blue)}
+.uplink-card.starlink{border-left:3px solid var(--sl-blue)}
+.uplink-card.fiber{border-left:3px solid var(--green)}
 
-        /* Mobile Responsive */
-        @media (max-width: 1200px) {
-            .dashboard {
-                grid-template-columns: 240px 1fr 240px;
-                grid-template-rows: 48px minmax(300px, 1fr) 180px;
-            }
-            .stats-panel { display: none; }
-        }
-        
-        @media (max-width: 900px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-                grid-template-rows: 48px auto auto auto 120px;
-            }
-            .header { 
-                grid-column: 1; 
-                flex-wrap: wrap;
-                padding: 8px;
-                height: auto;
-            }
-            .panel.left-panel {
-                grid-column: 1;
-                grid-row: auto;
-                max-height: 300px;
-            }
-            .panel.map-panel {
-                grid-column: 1;
-                grid-row: auto;
-                min-height: 250px;
-            }
-            .stats-panel {
-                display: none;
-            }
-            .panel:last-of-type {
-                grid-column: 1;
-                grid-row: auto;
-                max-height: 250px;
-            }
-            .event-log { grid-row: 3; min-height: 180px;
-                grid-column: 1;
-                height: 120px;
-            }
-            .uplink-card { position: relative;
-                padding: 6px;
-                margin-bottom: 4px;
-            }
-            .metrics-grid {
-                grid-template-columns: repeat(3, 1fr);
-                gap: 2px;
-            }
-            .metric {
-                padding: 2px;
-            }
-            .metric-label { font-size: 7px; }
-            .metric-value { font-size: 9px; }
-            .sparkline { display: none; }
-            .uplink-actions { display: none; }
-            .btn { padding: 6px 10px; font-size: 9px; }
-            .speed-display { font-size: 18px; }
-            .logo h1 { font-size: 12px; }
-        }
-        
-        
-            .badges { 
-                gap: 4px;
-            }
-            .badge {
-                padding: 3px 6px;
-                font-size: 8px;
-            }
-            #node-id { display: none; }
-            .panel.left-panel {
-                max-height: 250px;
-            }
-            .panel.map-panel {
-                min-height: 200px;
-            }
-            .uplink-card { position: relative;
-                padding: 4px;
-            }
-            .uplink-header {
-                margin-bottom: 3px;
-            }
-            .uplink-name { font-size: 10px; }
-            .metrics-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .gps-panel, .risk-panel { display: none; }
-            .map-legend { display: none; }
-            .event-log-controls button {
-                padding: 2px 4px;
-                font-size: 8px;
-            }
-            .log-entry {
-                font-size: 9px;
-                gap: 6px;
-            }
-            .log-time { min-width: 70px; }
-            .log-level { min-width: 50px; }
-        }
+.uplink-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.uplink-name{font-weight:700;font-size:10px}
+.uplink-type{font-size:8px;color:var(--muted)}
+.uplink-toggle{width:28px;height:14px;border-radius:7px;background:var(--border);cursor:pointer;
+    position:relative;transition:background .2s}
+.uplink-toggle.enabled{background:var(--green)}
+.uplink-toggle::after{content:'';position:absolute;top:2px;left:2px;width:10px;height:10px;
+    border-radius:50%;background:var(--text);transition:left .2s}
+.uplink-toggle.enabled::after{left:16px}
 
-        
-        /* Enhanced Mobile Styles */
-        @media (max-width: 600px) {
-            .dashboard {
-                display: flex;
-                flex-direction: column;
-                height: auto;
-                min-height: 100vh;
-                overflow-y: auto;
-            }
-            .header {
-                position: sticky;
-                top: 0;
-                z-index: 100;
-                padding: 6px 10px;
-                flex-wrap: nowrap;
-                gap: 6px;
-                background: var(--bg);
-                min-height: 44px;
-            }
-            .logo h1 { font-size: 11px; white-space: nowrap; }
-            .speed-display { 
-                font-size: 20px; 
-                font-weight: bold;
-            }
-            .badges { 
-                display: flex;
-                gap: 4px;
-                flex-shrink: 0;
-            }
-            .badge { padding: 3px 6px; font-size: 9px; }
-            
-            /* Uplink cards section - scrollable */
-            .panel.left-panel {
-                flex: 1 1 auto;
-                min-height: 200px;
-                max-height: none;
-                overflow-y: scroll;
-                padding: 8px;
-                -webkit-overflow-scrolling: touch;
-            }
-            .uplink-card {
-                padding: 10px;
-                margin-bottom: 6px;
-            }
-            .uplink-header {
-                margin-bottom: 6px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .uplink-name { font-size: 14px; font-weight: bold; }
-            .uplink-toggle {
-                width: 44px;
-                height: 24px;
-                min-width: 44px;
-            }
-            .uplink-toggle::after {
-                width: 18px;
-                height: 18px;
-            }
-            .uplink-toggle.enabled::after { left: 22px; }
-            
-            /* Metrics - 2 column grid, visible values */
-            .metrics-grid {
-                display: grid !important;
-                grid-template-columns: repeat(2, 1fr) !important;
-                gap: 6px !important;
-            }
-            .metric {
-                padding: 6px !important;
-                background: rgba(0,0,0,0.4) !important;
-                border-radius: 4px;
-                text-align: center;
-                min-height: 36px;
-            }
-            .metric-label { 
-                font-size: 9px !important; 
-                display: block !important; 
-                margin-bottom: 3px; 
-                color: var(--muted);
-            }
-            .metric-value { 
-                font-size: 14px !important; 
-                font-weight: bold !important; 
-                display: block !important; 
-            }
-            
-            /* Hide non-essential */
-            .sparkline { display: none !important; }
-            .uplink-actions { display: none !important; }
-            .stats-panel { display: none !important; }
-            .map-legend { display: none !important; }
-            .risk-panel { display: none !important; }
-            
-            /* Map compact */
-            .panel.map-panel {
-                flex: 0 0 180px;
-                min-height: 180px;
-            }
-            
-            /* Right panel - prediction */
-            .panel.right-panel {
-                flex: 0 0 auto;
-                padding: 8px;
-            }
-            .panel.right-panel h3 { font-size: 11px; margin-bottom: 6px; }
-            .stat-row { padding: 3px 0; }
-            .stat-label { font-size: 10px; }
-            .stat-value { font-size: 12px; }
-            
-            /* Mode buttons */
-            .mode-panel { padding: 8px; }
-            .mode-panel h3 { font-size: 10px; }
-            .mode-buttons { gap: 6px; }
-            .mode-buttons .btn { padding: 8px 12px; font-size: 11px; }
-            
-            /* Event log minimal */
-            .event-log { grid-row: 3; min-height: 180px;
-                flex: 0 0 100px;
-                font-size: 9px;
-            }
-            .log-time { display: none; }
-            .log-level { min-width: 50px; font-size: 9px; }
-            .log-msg { font-size: 9px; }
-        }
-        
-        /* Very small phones */
-        @media (max-width: 400px) {
-            .metrics-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .header { padding: 4px; }
-            .uplink-card { padding: 8px; }
-        }
+.metrics-row{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.m-cell{background:var(--bg);padding:3px;border-radius:2px;text-align:center}
+.m-lbl{font-size:7px;color:var(--muted);text-transform:uppercase}
+.m-val{font-size:10px;font-weight:600;color:var(--blue)}
+.m-val.good{color:var(--green)}.m-val.warn{color:var(--yellow)}.m-val.bad{color:var(--red)}.m-val.na{color:var(--dim)}
 
-        /* Uplink Enable Toggle */
-        .uplink-toggle {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 32px;
-            height: 16px;
-            background: var(--red);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .uplink-toggle.enabled { background: var(--green); }
-        .uplink-toggle::after {
-            content: '';
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            width: 12px;
-            height: 12px;
-            background: white;
-            border-radius: 50%;
-            transition: left 0.2s;
-        }
-        .uplink-toggle.enabled::after { left: 18px; }
-        .uplink-card { position: relative; }
-        .uplink-card.disabled { opacity: 0.4; }
+/* Risk bar */
+.risk-wrap{display:flex;align-items:center;gap:5px;margin-top:3px}
+.risk-bar{flex:1;height:5px;background:var(--bg);border-radius:3px;overflow:hidden}
+.risk-fill{height:100%;border-radius:3px;transition:width .4s}
+.risk-lbl{font-size:8px;font-weight:600;min-width:28px;text-align:right}
 
-        /* Chaos Panel */
-        .chaos-panel {
-            background: var(--card);
-            border: 1px solid var(--red);
-            border-radius: 4px;
-            padding: 10px;
-            margin-top: 10px;
-        }
-        .chaos-panel h3 {
-            color: var(--red);
-            font-size: 10px;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .chaos-slider {
-            width: 100%;
-            margin: 4px 0;
-        }
-        .chaos-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 6px 0;
-            font-size: 10px;
-        }
-        .chaos-value {
-            color: var(--orange);
-            font-weight: 600;
-            min-width: 50px;
-            text-align: right;
-        }
-        .chaos-btn {
-            background: var(--red);
-            border: none;
-            color: white;
-            padding: 6px 12px;
-            font-size: 9px;
-            cursor: pointer;
-            border-radius: 3px;
-            width: 100%;
-            margin-top: 8px;
-        }
-        .chaos-btn:hover { background: #ff4444; }
-        .chaos-btn.active { animation: pulse 0.5s infinite; }
-    </style>
+/* Prediction badges on cards */
+.pred-badge{position:absolute;top:5px;right:50px;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;z-index:5}
+.pred-badge.next{background:var(--yellow);color:#000}
+.pred-badge.second{background:#555;color:#ccc}
+.pred-badge.third{background:#333;color:#999}
+
+/* ─── Compact WG Section at bottom of left pane ─── */
+.wg-compact{padding:6px 8px;border-top:1px solid var(--border)}
+.wg-compact .pane-title{padding:0 0 4px;border-bottom:none}
+.wg-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:9px}
+.wg-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+.wg-dot.up{background:var(--green)}.wg-dot.stale{background:var(--yellow)}.wg-dot.down{background:var(--red)}
+.wg-summary{display:flex;gap:10px;font-size:9px;color:var(--muted);padding:4px 0 2px}
+.wg-summary span{color:var(--blue);font-weight:600}
+
+/* ═══ MAIN AREA ═══ */
+.main-area{background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
+
+/* View Tabs */
+.view-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);flex-shrink:0}
+.vtab{padding:8px 16px;background:none;border:none;color:var(--muted);font-size:10px;font-weight:600;
+    font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px;
+    border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.vtab:hover{color:var(--text)}
+.vtab.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+.view-content{flex:1;overflow-y:auto;padding:10px}
+.view-panel{display:none}
+.view-panel.active{display:block}
+
+/* ─── STATUS VIEW ─── */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px;text-align:center}
+.kpi .val{font-size:22px;font-weight:700;color:var(--blue)}
+.kpi .lbl{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:2px}
+.kpi .sub{font-size:9px;color:var(--muted);margin-top:1px}
+
+.active-path-banner{
+    background:linear-gradient(135deg,rgba(0,255,136,.04),rgba(0,212,255,.04));
+    border:1px solid var(--green);border-radius:5px;padding:10px 14px;margin-bottom:12px;
+    display:flex;justify-content:space-between;align-items:center}
+.active-path-banner .path-name{font-size:15px;font-weight:700;color:var(--green)}
+.active-path-banner .path-info{display:flex;align-items:center;gap:10px}
+.active-path-banner .path-detail{font-size:9px;color:var(--muted)}
+.active-path-banner.warn{border-color:var(--yellow);background:linear-gradient(135deg,rgba(255,170,0,.04),rgba(255,102,0,.04))}
+.badge-sm{display:inline-block;padding:2px 6px;border-radius:2px;font-size:8px;font-weight:600}
+.badge-sm.good{background:rgba(0,255,136,.12);color:var(--green)}
+.badge-sm.warn{background:rgba(255,170,0,.12);color:var(--yellow)}
+.badge-sm.bad{background:rgba(255,68,68,.12);color:var(--red)}
+
+/* Throughput bars */
+.tp-section{margin-bottom:12px}
+.tp-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tp-label{font-size:9px;color:var(--muted);min-width:30px;text-align:right}
+.tp-bar{flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.tp-fill{height:100%;border-radius:5px;transition:width .5s ease}
+.tp-fill.down{background:linear-gradient(90deg,var(--blue),var(--green))}
+.tp-fill.up{background:linear-gradient(90deg,var(--purple),var(--blue))}
+.tp-val{font-size:10px;font-weight:600;color:var(--blue);min-width:65px}
+
+/* Prediction */
+.pred-section{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px;margin-bottom:12px}
+.pred-section h3{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
+.pred-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pred-item{text-align:center}
+.pred-item .rank{font-size:8px;color:var(--muted);text-transform:uppercase}
+.pred-item .name{font-size:11px;font-weight:700;color:var(--blue)}
+.pred-item .name.active-pred{color:var(--green)}
+
+/* Map placeholder */
+.map-container{height:250px;background:var(--bg);border:1px solid var(--border);border-radius:5px;
+    margin-bottom:12px;position:relative;overflow:hidden}
+#map{width:100%;height:100%;border-radius:5px}
+.map-overlay{position:absolute;top:8px;left:8px;z-index:500;background:rgba(10,10,15,.85);
+    padding:5px 10px;border-radius:3px;font-size:9px;color:var(--muted)}
+.map-speed{position:absolute;top:8px;right:8px;z-index:500;background:rgba(10,10,15,.85);
+    padding:4px 10px;border-radius:3px;font-size:14px;font-weight:700;color:var(--blue)}
+
+/* ─── DIAGNOSTICS VIEW ─── */
+.diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.diag-card{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px}
+.diag-card h3{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+.stat-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(42,42,78,.25)}
+.stat-row:last-child{border-bottom:none}
+.stat-lbl{color:var(--muted)}.stat-val{font-weight:600;color:var(--blue)}
+.stat-val.good{color:var(--green)}.stat-val.warn{color:var(--yellow)}.stat-val.bad{color:var(--red)}
+.big-num{text-align:center;padding:8px 0}
+.big-num .v{font-size:28px;font-weight:700;color:var(--blue)}
+.big-num .l{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:2px}
+
+/* Namespace cards */
+.ns-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin-top:8px}
+.ns-card{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px;font-size:9px}
+.ns-card.healthy{border-left:2px solid var(--green)}
+.ns-card.unhealthy{border-left:2px solid var(--red)}
+.ns-card .ns-name{font-weight:700;margin-bottom:3px}
+.ns-card .ns-det{color:var(--muted);line-height:1.5}
+
+/* ─── WG TUNNELS VIEW ─── */
+.tun-table{width:100%;border-collapse:collapse;font-size:9px}
+.tun-table th{text-align:left;padding:6px 8px;background:var(--bg);color:var(--muted);font-size:8px;
+    text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border)}
+.tun-table td{padding:6px 8px;border-bottom:1px solid var(--border)}
+.tun-table tr:hover{background:rgba(0,212,255,.02)}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px}
+.status-dot.up{background:var(--green);box-shadow:0 0 4px var(--green)}
+.status-dot.stale{background:var(--yellow);box-shadow:0 0 4px var(--yellow)}
+.status-dot.down{background:var(--red);box-shadow:0 0 4px var(--red)}
+.ctrl-badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:8px;font-weight:600}
+.ctrl-badge.a{background:rgba(0,212,255,.12);color:var(--blue)}
+.ctrl-badge.b{background:rgba(123,44,191,.12);color:var(--purple)}
+.tun-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.tun-summary .kpi .val{font-size:20px}
+
+/* ═══ RIGHT PANE — EVENT LOG ═══ */
+.right-pane{background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
+.log-controls{display:flex;gap:3px;padding:6px 8px;flex-wrap:wrap}
+.log-btn{padding:3px 8px;background:var(--card);border:1px solid var(--border);color:var(--muted);
+    font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px}
+.log-btn:hover{color:var(--text)}.log-btn.active{color:var(--blue);border-color:var(--blue)}
+.log-content{flex:1;overflow-y:auto;padding:0 8px 8px}
+.log-entry{padding:3px 0;border-bottom:1px solid rgba(42,42,78,.2);font-size:9px;line-height:1.4}
+.log-time{color:var(--dim);margin-right:4px;font-size:8px}
+.log-level{font-weight:700;margin-right:4px;font-size:8px}
+.log-level.info{color:var(--blue)}.log-level.warn{color:var(--yellow)}
+.log-level.switch{color:var(--green)}.log-level.trigger{color:var(--red)}
+.log-level.error{color:var(--red)}.log-level.predict{color:var(--purple)}
+.log-msg{color:var(--text)}.log-gps{color:var(--dim);font-size:8px;margin-left:3px}
+
+/* Actions buttons in right pane */
+.actions-section{padding:8px;border-top:1px solid var(--border);flex-shrink:0}
+.actions-section h2{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:6px}
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.action-btn{padding:5px;background:var(--card);border:1px solid var(--border);color:var(--text);
+    font-size:8px;font-family:inherit;cursor:pointer;border-radius:3px;text-align:center}
+.action-btn:hover{border-color:var(--blue);color:var(--blue)}
+.action-btn.danger{border-color:rgba(255,68,68,.3);color:var(--red)}
+.action-btn.danger:hover{background:rgba(255,68,68,.1)}
+
+/* ═══ SPINNER ═══ */
+.spinner{display:inline-block;width:10px;height:10px;border:2px solid var(--border);
+    border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ═══ RESPONSIVE ═══ */
+@media(max-width:900px){
+    .dashboard{grid-template-columns:1fr;grid-template-rows:44px 1fr}
+    .left-pane,.right-pane{display:none}
+}
+</style>
 </head>
 <body>
+
 <div class="dashboard">
-    <!-- Header -->
-    <header class="header">
-        <div class="logo">
-            <h1>PATHSTEER <span class="g">GUARDIAN</span></h1>
-        </div>
+<!-- ═══ HEADER ═══ -->
+<div class="header">
+    <div class="logo">
+        <h1>PATHSTEER <span class="g">GUARDIAN</span></h1>
+    </div>
+    <div class="hdr-center">
+        <span class="badge mode-tripwire" id="badge-mode">TRIPWIRE</span>
+        <span class="badge st-normal" id="badge-state">NORMAL</span>
+        <span class="badge" id="badge-dup" style="background:rgba(100,100,100,.15);color:var(--muted)">DUP OFF</span>
         <div class="speed-display">
-            <span id="speed-val">0</span>
-            <span class="unit">mph</span>
-        </div>
-        <div class="badges">
-            <span class="badge mode-tripwire" id="mode-badge">TRIPWIRE</span>
-            <span class="badge state-normal" id="state-badge">NORMAL</span>
-            <span style="font-size:9px;color:var(--muted)" id="node-id">--</span>
-        <button onclick="window.open('/demo', 'chaos', 'width=1200,height=800,scrollbars=yes')" style="background:linear-gradient(135deg,#ff6b35,#f39c12);border:none;padding:8px 15px;border-radius:6px;cursor:pointer;font-weight:bold;color:#000;margin-left:10px;">🎛️ CHAOS</button>
-        <button onclick="window.location.href='/settings'" style="background:#2a3a4a;border:1px solid #4ecdc4;padding:8px 15px;border-radius:6px;cursor:pointer;font-weight:bold;color:#4ecdc4;margin-left:5px;">⚙️</button>
-        </div>
-    </header>
-    
-    <!-- Left: Uplinks -->
-    <div class="panel">
-        <div class="training-banner" id="training-banner">⚠ TRAINING MODE — NO ACTUATION</div>
-        
-        <h2>Uplinks</h2>
-        <div id="uplinks"></div>
-        
-        <h2>GPS</h2>
-        <div class="gps-panel">
-            <div class="gps-coords" id="gps-coords">--.------, --.------</div>
-            <div class="gps-meta">
-                Heading: <span id="gps-heading">--</span>° | Alt: <span id="gps-alt">--</span>m
-            </div>
-        </div>
-        
-        <h2>Global Risk</h2>
-        <div class="risk-panel">
-            <div class="risk-header">
-                <span class="risk-value" id="risk-pct">0%</span>
-                <span class="risk-rec" id="risk-rec" style="background:rgba(0,255,136,0.2);color:var(--green)">NORMAL</span>
-            </div>
-            <div class="risk-bar"><div class="risk-fill" id="risk-fill" style="width:0%"></div></div>
+            <span id="speed-down">0.0</span><span class="unit">↓</span>
+            <span id="speed-up">0.0</span><span class="unit">↑ Mbps</span>
         </div>
     </div>
-    
-    <!-- Center: Map -->
-    <div class="panel map-panel">
-        <div id="map"></div>
-        <div class="map-legend">
-            <div style="font-weight:600;margin-bottom:4px">Signal Map</div>
-            <div class="legend-row"><div class="legend-dot" style="background:var(--sl-blue)"></div> Starlink</div>
-            <div class="legend-row"><div class="legend-dot" style="background:var(--tmo-magenta)"></div> T-Mobile</div>
-            <div class="legend-row"><div class="legend-dot" style="background:var(--att-blue)"></div> AT&T</div>
-            <div class="legend-row"><div class="legend-dot" style="background:var(--red)"></div> High Risk Zone</div>
-        </div>
+    <div class="hdr-right">
+        <button class="hdr-btn" onclick="chaosFloat()">🎲 Chaos</button>
+        <button class="hdr-btn" onclick="llmFloat()">⚡ LLM</button>
+        <button class="hdr-btn" onclick="flowFloat()">📡 Flows</button>
+        <button class="hdr-btn" onclick="logFloat()">📋 History</button>
+        <a class="hdr-btn accent" href="/diag/" target="_blank" title="Full diagnostics">🔍 Diag</a>
     </div>
+</div>
 
-    <!-- Stats Panel -->
-    <div class="stats-panel">
-        <div class="stat-card">
-            <h3>Session Stats</h3>
-            <div class="big-stat">
-                <div class="big-stat-value" id="active-sessions">0</div>
-                <div class="big-stat-label">Active Sessions</div>
-            </div>
+<!-- ═══ LEFT PANE ═══ -->
+<div class="left-pane">
+    <div class="pane-title">UPLINKS</div>
+    <div class="uplinks-list" id="uplinks-list">
+        <!-- Rendered by JS -->
+    </div>
+    <div class="wg-compact" id="wg-compact">
+        <div class="pane-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>WG TUNNELS</span>
+            <span class="wg-summary" id="wg-summary"><span>--</span>/12 UP</span>
         </div>
-        
-        <div class="stat-card">
-            <h3>Throughput</h3>
-            <div class="stat-row">
-                <span class="stat-label">Download</span>
-                <span class="stat-value" id="throughput-down">0 Mbps</span>
-            </div>
-            <div class="throughput-bar"><div class="throughput-fill" id="throughput-down-bar" style="width:0%"></div></div>
-            <div class="stat-row" style="margin-top:8px">
-                <span class="stat-label">Upload</span>
-                <span class="stat-value" id="throughput-up">0 Mbps</span>
-            </div>
-            <div class="throughput-bar"><div class="throughput-fill" id="throughput-up-bar" style="width:0%"></div></div>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Protection Events</h3>
-            <div class="stat-row">
-                <span class="stat-label">Tripwires (24h)</span>
-                <span class="stat-value" id="stat-tripwires">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Switches (24h)</span>
-                <span class="stat-value" id="stat-switches">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Avg Switch Time</span>
-                <span class="stat-value good" id="stat-switch-time">--</span>
-            </div>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Path Quality</h3>
-            <div class="stat-row">
-                <span class="stat-label">Best Path</span>
-                <span class="stat-value good" id="stat-best-path">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Worst Path</span>
-                <span class="stat-value warn" id="stat-worst-path">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Path Diversity</span>
-                <span class="stat-value" id="stat-diversity">6/6</span>
-            </div>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Path Prediction</h3>
-            <div class="stat-row">
-                <span class="stat-label">Active</span>
-                <span class="stat-value good" id="pred-active">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Next Best</span>
-                <span class="stat-value" id="pred-next" style="color:var(--yellow)">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">2nd</span>
-                <span class="stat-value" id="pred-2nd" style="color:#888">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">3rd</span>
-                <span class="stat-value" id="pred-3rd" style="color:#666">--</span>
-            </div>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Uptime</h3>
-            <div class="stat-row">
-                <span class="stat-label">Session</span>
-                <span class="stat-value" id="stat-uptime">--</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Availability</span>
-                <span class="stat-value good" id="stat-availability">100%</span>
-            </div>
+        <div id="wg-rows">
+            <span class="spinner"></span> Loading...
         </div>
     </div>
+</div>
 
-    <!-- Right: Controls & Status -->
-    <div class="panel" style="overflow-y:auto">
-        <div class="flap-banner" id="flap-banner">⚡ FLAP SUPPRESSED — Max switches reached</div>
-        
-        <div class="countdown-panel" id="countdown-panel">
-            <div class="countdown-title">PROTECTION ACTIVE</div>
-            <div class="countdown-trigger">Trigger: <span id="trigger-reason">--</span></div>
-            <div class="countdown-grid">
-                <div class="countdown-item">
-                    <div class="countdown-num" id="cd-hold">8</div>
-                    <div class="countdown-label">Hold</div>
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-area">
+    <div class="view-tabs">
+        <button class="vtab active" onclick="switchView('status',this)">Status</button>
+        <button class="vtab" onclick="switchView('diag',this)">Diagnostics</button>
+        <button class="vtab" onclick="switchView('tunnels',this)">WG Tunnels</button>
+    </div>
+    <div class="view-content">
+        <!-- STATUS VIEW -->
+        <div class="view-panel active" id="view-status">
+            <div class="active-path-banner" id="active-banner">
+                <div class="path-info">
+                    <span class="status-dot up"></span>
+                    <span class="path-name" id="active-path-name">--</span>
+                    <span class="path-detail" id="active-path-detail">Loading...</span>
                 </div>
-                <div class="countdown-item">
-                    <div class="countdown-num" id="cd-clean">5</div>
-                    <div class="countdown-label">Clean</div>
-                </div>
-                <div class="countdown-item">
-                    <div class="countdown-num" id="cd-switches">0</div>
-                    <div class="countdown-label">Switches</div>
-                </div>
-            </div>
-        </div>
-        
-        <h2>Mode</h2>
-        <div class="control-group">
-            <div class="btn-row">
-                <button class="btn" id="btn-training" onclick="setMode('training')">TRAINING</button>
-                <button class="btn active" id="btn-tripwire" onclick="setMode('tripwire')">TRIPWIRE</button>
-                <button class="btn" id="btn-mirror" onclick="setMode('mirror')">MIRROR</button>
-            </div>
-        </div>
-        
-        <h2>Manual Trigger</h2>
-        <div class="control-group">
-            <button class="btn btn-wide danger" onclick="triggerProtection()">⚡ TRIGGER PROTECTION NOW</button>
-        </div>
-        
-        <h2>Controller</h2>
-        <div class="controller-panel">
-            <div class="ctrl-row">
-                <span class="ctrl-label">Active:</span>
-                <span class="ctrl-value active" id="ctrl-active">Controller A</span>
-            </div>
-            <div class="ctrl-row">
-                <span class="ctrl-label">C8000:</span>
-                <span class="ctrl-value" id="ctrl-c8000">pop-dal.pathsteernetworks.com</span>
-            </div>
-            <div class="btn-row" style="margin-top:6px">
-                <button class="btn" onclick="switchController(0)">CTRL-A</button>
-                <button class="btn" onclick="switchController(1)">CTRL-B</button>
-            </div>
-        </div>
-        
-        <h2>Decision Feed</h2>
-        <div class="feed" id="feed">
-            <div class="feed-item predict">
-                <div class="feed-time">--:--:--.---</div>
-                <div class="feed-msg">Waiting for events...</div>
-            </div>
-        </div>
-        
-        <h2 style="margin-top:10px">Remote Targets</h2>
-        <div class="targets-panel">
-            <div class="target-row" style="cursor:pointer" onclick="flowFloat()">
-                <span>Flows: 🔍</span>
-                <span class="target-status" id="target-voice"><span id="flow-count" style="color:var(--green)">0</span> active</span>
-            </div>
-            <div style="font-size:8px;color:var(--muted)">
-                <span>SIP: <span id="sip-count" style="color:var(--blue)">0</span></span>
-                <span style="margin-left:6px">Failovers: <span id="flow-failovers" style="color:var(--yellow)">0</span></span>
-            </div>
-            </div>
-            <div id="llm-panel" style="margin-top:5px;padding:5px;background:var(--bg);border-radius:4px">
-                <div class="target-row">
-                    <span style="cursor:pointer" onclick="llmFloat()">LLM: 🔍</span>
-                    <span class="target-status" id="target-llm" style="color:var(--muted)">Stopped</span>
-                </div>
-                <input type="text" id="llm-prompt" value="Write a poem about network resilience" style="width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);padding:4px;font-size:9px;margin:4px 0;font-family:inherit;border-radius:3px">
-                <div style="display:flex;gap:4px;margin:3px 0">
-                    <select id="llm-loops" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--border);font-size:8px;font-family:inherit;padding:2px">
-                        <option value="0">Continuous</option>
-                        <option value="5">5 loops</option>
-                        <option value="10">10 loops</option>
-                        <option value="50">50 loops</option>
-                        <option value="100">100 loops</option>
-                    </select>
-                    <button id="llm-start-btn" onclick="llmStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:3px;font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px;font-weight:bold">START</button>
-                    <button onclick="llmStop()" style="flex:1;background:var(--red);color:white;border:none;padding:3px;font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px;font-weight:bold">STOP</button>
-                </div>
-                <div style="font-size:8px;color:var(--muted);margin-top:3px">
-                    <div>Tokens/s: <span id="llm-tps" style="color:var(--blue)">0</span> | Total: <span id="llm-total" style="color:var(--green)">0</span> | Reqs: <span id="llm-reqs" style="color:var(--text)">0</span> | Err: <span id="llm-errs" style="color:var(--red)">0</span></div>
-                    <div style="margin-top:2px;color:var(--muted);max-height:80px;overflow-y:auto;line-height:1.4;padding:3px;background:var(--card);border-radius:2px;margin-top:3px" id="llm-response" onclick="llmFloat()" style="cursor:pointer" title="Click to expand">--</div>
+                <div>
+                    <span class="badge-sm good" id="ctrl-badge">CTRL-A</span>
+                    <span class="badge-sm" id="cmd-badge" style="background:rgba(100,100,100,.1);color:var(--muted)">--</span>
                 </div>
             </div>
-        </div>
-        
-        <div style="margin-top:8px;font-size:8px;color:var(--muted);border-top:1px solid var(--border);padding-top:4px">
-            Run: <span style="color:var(--blue)" id="run-id">--</span> | Dup: <span id="dup-status">OFF</span>
-        </div>
-    <!-- Event Log Panel -->
-    <div class="event-log">
-        <div class="event-log-header">
-            <h3>Event Log</h3>
-            <div class="event-log-controls">
-                <button class="active" onclick="filterLog('all')">ALL</button>
-                <button onclick="filterLog('trigger')">TRIGGERS</button>
-                <button onclick="filterLog('switch')">SWITCHES</button>
-                <button onclick="filterLog('error')">ERRORS</button>
-                <button onclick="exportLog()" style="border-color:var(--green);color:var(--green)">EXPORT</button>
-                <button onclick="logFloat()" style="border-color:var(--purple);color:var(--purple)">HISTORY</button>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="val" id="kpi-paths">--</div><div class="lbl">Paths Up</div></div>
+                <div class="kpi"><div class="val" id="kpi-best">--</div><div class="lbl">Best RTT</div><div class="sub" id="kpi-best-name">--</div></div>
+                <div class="kpi"><div class="val" id="kpi-risk">--</div><div class="lbl">Risk</div></div>
+                <div class="kpi"><div class="val" id="kpi-uptime">--</div><div class="lbl">Uptime</div></div>
+            </div>
+
+            <div class="tp-section">
+                <div class="tp-row">
+                    <span class="tp-label">DOWN</span>
+                    <div class="tp-bar"><div class="tp-fill down" id="tp-down-fill" style="width:0%"></div></div>
+                    <span class="tp-val" id="tp-down-val">0.0 Mbps</span>
+                </div>
+                <div class="tp-row">
+                    <span class="tp-label">UP</span>
+                    <div class="tp-bar"><div class="tp-fill up" id="tp-up-fill" style="width:0%"></div></div>
+                    <span class="tp-val" id="tp-up-val">0.0 Mbps</span>
+                </div>
+            </div>
+
+            <div class="pred-section">
+                <h3>Path Prediction</h3>
+                <div class="pred-grid">
+                    <div class="pred-item"><div class="rank">Active</div><div class="name active-pred" id="pred-active">--</div></div>
+                    <div class="pred-item"><div class="rank">Next</div><div class="name" id="pred-next">--</div></div>
+                    <div class="pred-item"><div class="rank">2nd</div><div class="name" id="pred-2nd">--</div></div>
+                    <div class="pred-item"><div class="rank">3rd</div><div class="name" id="pred-3rd">--</div></div>
+                </div>
+            </div>
+
+            <div class="map-container" id="map-wrap">
+                <div id="map"></div>
+                <div class="map-overlay" id="gps-label">GPS: No Fix</div>
+                <div class="map-speed" id="gps-speed">0 mph</div>
             </div>
         </div>
-        <div class="event-log-content" id="event-log-content">
-            <div class="log-entry">
-                <span class="log-time">--:--:--.---</span>
-                <span class="log-level info">INFO</span>
-                <span class="log-msg">Waiting for events...</span>
+
+        <!-- DIAGNOSTICS VIEW -->
+        <div class="view-panel" id="view-diag">
+            <div class="diag-grid">
+                <div class="diag-card"><h3>Failover Performance</h3>
+                    <div class="stat-row"><span class="stat-lbl">Tests</span><span class="stat-val" id="fo-tests">0</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Success</span><span class="stat-val good" id="fo-success">--%</span></div>
+                    <div class="stat-row"><span class="stat-lbl">P50 Detect</span><span class="stat-val" id="fo-det50">-- ms</span></div>
+                    <div class="stat-row"><span class="stat-lbl">P95 Detect</span><span class="stat-val" id="fo-det95">-- ms</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Worst Total</span><span class="stat-val warn" id="fo-worst">-- ms</span></div>
+                </div>
+                <div class="diag-card"><h3>Stability</h3>
+                    <div class="stat-row"><span class="stat-lbl">Availability</span><span class="stat-val good" id="stab-avail">--%</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Uptime</span><span class="stat-val" id="stab-uptime">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">MTBF</span><span class="stat-val" id="stab-mtbf">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Failures</span><span class="stat-val" id="stab-fails">0</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Route Flaps</span><span class="stat-val" id="stab-flaps">0</span></div>
+                </div>
+                <div class="diag-card"><h3>System Load</h3>
+                    <div class="big-num"><div class="v" id="sys-cpu">--%</div><div class="l">CPU</div></div>
+                    <div class="stat-row"><span class="stat-lbl">Load</span><span class="stat-val" id="sys-load">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Memory</span><span class="stat-val" id="sys-mem">--</span></div>
+                </div>
+                <div class="diag-card"><h3>Active Path Verify</h3>
+                    <div class="stat-row"><span class="stat-lbl">Route</span><span class="stat-val" id="apv-route">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Daemon</span><span class="stat-val" id="apv-daemon">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Match</span><span class="stat-val" id="apv-match">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">SRC OK</span><span class="stat-val" id="apv-src">--</span></div>
+                </div>
+            </div>
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:8px 0 4px">Namespaces</div>
+            <div class="ns-grid" id="ns-grid"><span class="spinner"></span></div>
+        </div>
+
+        <!-- WG TUNNELS VIEW -->
+        <div class="view-panel" id="view-tunnels">
+            <table class="tun-table">
+                <thead><tr><th>Status</th><th>Tunnel</th><th>Uplink</th><th>Ctrl</th><th>Endpoint</th><th>Handshake</th><th>RX</th><th>TX</th><th>RTT</th></tr></thead>
+                <tbody id="tun-tbody"><tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px"><span class="spinner"></span> Loading...</td></tr></tbody>
+            </table>
+            <div class="tun-summary">
+                <div class="kpi"><div class="val" id="tun-up">--</div><div class="lbl">UP</div></div>
+                <div class="kpi"><div class="val" id="tun-stale" style="color:var(--yellow)">--</div><div class="lbl">Stale</div></div>
+                <div class="kpi"><div class="val" id="tun-down" style="color:var(--red)">--</div><div class="lbl">Down</div></div>
+                <div class="kpi"><div class="val" id="tun-xfer">--</div><div class="lbl">Transfer</div></div>
+            </div>
+            <div style="text-align:center;margin-top:10px">
+                <button class="hdr-btn accent" onclick="runProbe()" id="probe-btn">⚡ PROBE ALL RTT</button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- ═══ RIGHT PANE — EVENT LOG + ACTIONS ═══ -->
+<div class="right-pane">
+    <div class="pane-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>EVENT LOG</span>
+        <button class="log-btn" onclick="exportLog()" title="Export CSV">⬇</button>
+    </div>
+    <div class="log-controls">
+        <button class="log-btn active" onclick="filterLog('all',this)">All</button>
+        <button class="log-btn" onclick="filterLog('switch',this)">Switch</button>
+        <button class="log-btn" onclick="filterLog('trigger',this)">Trigger</button>
+        <button class="log-btn" onclick="filterLog('warn',this)">Warn</button>
+        <button class="log-btn" onclick="filterLog('info',this)">Info</button>
+    </div>
+    <div class="log-content" id="event-log-content"></div>
+
+    <div class="actions-section">
+        <h2>Actions</h2>
+        <div class="action-grid">
+            <button class="action-btn" onclick="forceActive('fa')">Force FA</button>
+            <button class="action-btn" onclick="forceActive('fb')">Force FB</button>
+            <button class="action-btn" onclick="forceActive('sl_a')">Force SL_A</button>
+            <button class="action-btn" onclick="forceActive('sl_b')">Force SL_B</button>
+            <button class="action-btn" onclick="forceActive('cell_a')">Force CELL_A</button>
+            <button class="action-btn" onclick="forceActive('cell_b')">Force CELL_B</button>
+            <button class="action-btn" onclick="switchController(0)">CTRL-A</button>
+            <button class="action-btn" onclick="switchController(1)">CTRL-B</button>
+            <button class="action-btn danger" onclick="triggerProtection()">⚠ TRIGGER</button>
+            <button class="action-btn" onclick="clearForce()">↺ AUTO</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Hidden LLM state -->
+<input type="hidden" id="llm-prompt" value="Explain quantum computing in simple terms">
+<input type="hidden" id="llm-loops" value="0">
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script>
-// Update stats from status
-function updateStats(s) {
-    // Find best/worst RTT
-    const available = (s.uplinks || []).filter(u => u.enabled && u.available);
-    if (available.length > 0) {
-        const sorted = [...available].sort((a,b) => (a.rtt_ms||999) - (b.rtt_ms||999));
-        document.getElementById('stat-best-path').textContent = sorted[0].name.toUpperCase() + ' (' + (sorted[0].rtt_ms||0).toFixed(0) + 'ms)';
-        document.getElementById('stat-worst-path').textContent = sorted[sorted.length-1].name.toUpperCase() + ' (' + (sorted[sorted.length-1].rtt_ms||0).toFixed(0) + 'ms)';
-        document.getElementById('stat-diversity').textContent = available.length + '/' + (s.uplinks||[]).filter(u=>u.enabled).length;
-        
-        // Path Prediction update
-        const activeUplink = (s.uplinks || []).find(u => u.active);
-        const nonActive = available.filter(u => !u.active);
-        const scored = nonActive.map(u => ({
-            name: u.name,
-            score: (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10
-        })).sort((a, b) => a.score - b.score);
-        
-        const totalInv = scored.reduce((s, x) => s + 1000/(x.score+1), 0);
-        const probs = scored.map(x => ({ name: x.name, prob: Math.round((1000/(x.score+1))/totalInv*100) }));
-        
-        document.getElementById('pred-active').textContent = activeUplink ? activeUplink.name.toUpperCase() : '--';
-        document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase() + ' (' + probs[0].prob + '%)' : '--';
-        document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase() + ' (' + probs[1].prob + '%)' : '--';
-        document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase() + ' (' + probs[2].prob + '%)' : '--';
-    }
-    
-    // Throughput (placeholder - would come from actual traffic stats)
-    const downMbps = s.throughput_down_mbps || 0;
-    const upMbps = s.throughput_up_mbps || 0;
-    if(!window._smoothDown) window._smoothDown = 0;
-    if(!window._smoothUp) window._smoothUp = 0;
-    window._smoothDown = window._smoothDown * 0.7 + downMbps * 0.3;
-    window._smoothUp = window._smoothUp * 0.7 + upMbps * 0.3;
-    document.getElementById("throughput-down").textContent = window._smoothDown.toFixed(1) + " Mbps";
-    document.getElementById("throughput-up").textContent = window._smoothUp.toFixed(1) + " Mbps";
-    document.getElementById("throughput-down-bar").style.width = Math.min(100, window._smoothDown * 2) + "%";
-    document.getElementById("throughput-up-bar").style.width = Math.min(100, window._smoothUp * 2) + "%";
-    
-    // Session uptime
-    if (s.run_id) {
-        const parts = s.run_id.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
-        const start = parts ? new Date(parts[1], parts[2]-1, parts[3], parts[4], parts[5], parts[6]) : new Date();
-        const now = new Date();
-        const mins = Math.floor((now - start) / 60000);
-        const hrs = Math.floor(mins / 60);
-        document.getElementById('stat-uptime').textContent = hrs + 'h ' + (mins % 60) + 'm';
-    }
-}
-</script>
-<script>
-// Map init
-const map = L.map('map').setView([32.7767, -96.7970], 13);  // Dallas default
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OSM © CARTO', maxZoom: 19
-}).addTo(map);
-let posMarker = null;
-let trail = [];
-const trailLine = L.polyline([], {color: '#00d4ff', weight: 2, opacity: 0.6}).addTo(map);
+/* ═══════════════════════════════════════════════════════════════════
+   PathSteer Guardian — Unified Dashboard
+   Single source of truth: /api/stream (SSE from daemon via Flask)
+   ═══════════════════════════════════════════════════════════════════ */
 
-// Heatmap layer
-let heatLayer = null;
-async function loadHeatmap() {
-    try {
-        const resp = await fetch("/api/heatmap?hours=720");
-        const data = await resp.json();
-        if (data && data.length > 0) {
-            const points = data.map(p => [p.lat, p.lng, Math.min(p.rtt/50, 1)]);
-            if (heatLayer) map.removeLayer(heatLayer);
-            heatLayer = L.heatLayer(points, {radius:20, blur:15, maxZoom:17}).addTo(map);
-            console.log("Heatmap loaded:", data.length, "points");
-        }
-    } catch(e) { console.log("Heatmap error:", e); }
-}
-setTimeout(loadHeatmap, 2000);
-setInterval(loadHeatmap, 30000);
+const UPLINK_LABELS = {cell_a:'T-Mobile',cell_b:'AT&T',sl_a:'Starlink A',sl_b:'Starlink B',fa:'Fiber A',fb:'Fiber B'};
+const UPLINK_TYPES = {cell_a:'lte',cell_b:'lte att',sl_a:'starlink',sl_b:'starlink',fa:'fiber',fb:'fiber'};
+const UPLINK_TYPE_LABELS = {cell_a:'LTE',cell_b:'LTE',sl_a:'LEO',sl_b:'LEO',fa:'FIBER',fb:'FIBER'};
 
-// Signal markers with popups
-let markerLayer = null;
-const uplinkColors = {
-    "cell_a": "#E20074",  // T-Mobile magenta
-    "cell_b": "#00A8E0",  // AT&T blue
-    "sl_a": "#1DA1F2",    // Starlink
-    "sl_b": "#1DA1F2",
-    "fa": "#00ff88",      // Fiber green
-    "fb": "#00ff88",
-    "fiber2": "#00ff88"
-};
-async function loadMarkers() {
-    try {
-        const resp = await fetch("/api/heatmap?hours=720");
-        const data = await resp.json();
-        if (markerLayer) map.removeLayer(markerLayer);
-        const markers = data.filter(p => ["cell_a","cell_b","sl_a","sl_b"].includes(p.uplink)).slice(-200).map(p => {
-            const color = uplinkColors[p.uplink] || "#fff";
-            return L.circleMarker([p.lat, p.lng], {
-                radius: 5, fillColor: color, color: "#000", 
-                weight: 1, fillOpacity: 0.7
-            }).bindPopup(
-                "<b>" + p.uplink + "</b><br>" +
-                "RTT: " + (p.rtt||0).toFixed(1) + "ms<br>" +
-                "RSRP: " + (p.rsrp||0) + "<br>" +
-                "SINR: " + (p.sinr||0)
-            );
-        });
-        markerLayer = L.layerGroup(markers).addTo(map);
-    } catch(e) { console.log("Marker error:", e); }
-}
-setTimeout(loadMarkers, 3000);
-setInterval(loadMarkers, 30000);
-
-// Sparkline data
-const sparkData = {};
-
-// Signal bar helper
-function getSignalBars(rsrp) {
-    const bars = 4;
-    let active = 0;
-    let cls = 'active';
-    if (rsrp >= -80) { active = 4; cls = 'active'; }
-    else if (rsrp >= -90) { active = 3; cls = 'active'; }
-    else if (rsrp >= -100) { active = 2; cls = 'warn'; }
-    else if (rsrp >= -110) { active = 1; cls = 'bad'; }
-    else { active = 0; cls = 'bad'; }
-    
-    let html = '<span class="signal-bars">';
-    for (let i = 0; i < bars; i++) {
-        html += `<span class="signal-bar ${i < active ? cls : ''}"></span>`;
-    }
-    html += '</span>';
-    return html;
+// ─── View switching ───
+function switchView(id, el) {
+    document.querySelectorAll('.vtab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('view-'+id).classList.add('active');
+    el.classList.add('active');
+    if (id === 'diag') fetchDiagnostics();
+    if (id === 'tunnels') fetchTunnels(false);
 }
 
-// Signal bar helper
-function getSignalBars(rsrp) {
-    const bars = 4;
-    let active = 0;
-    let cls = 'active';
-    if (rsrp >= -80) { active = 4; cls = 'active'; }
-    else if (rsrp >= -90) { active = 3; cls = 'active'; }
-    else if (rsrp >= -100) { active = 2; cls = 'warn'; }
-    else if (rsrp >= -110) { active = 1; cls = 'bad'; }
-    else { active = 0; cls = 'bad'; }
-    
-    let html = '<span class="signal-bars">';
-    for (let i = 0; i < bars; i++) {
-        html += `<span class="signal-bar ${i < active ? cls : ''}"></span>`;
-    }
-    html += '</span>';
-    return html;
-}
-
+// ─── Uplink card rendering ───
 let _uplinkInteractionLock = 0;
-
-function renderUplinks(uplinks) {
-    // Skip re-render if user just clicked (prevents DOM destroy during click)
+function renderUplinks(uplinks, activeUplink) {
     if (Date.now() < _uplinkInteractionLock) return;
-    console.log("renderUplinks called with", uplinks.length, "uplinks");
-    const container = document.getElementById('uplinks');
-    container.innerHTML = '';
-    
-    // Calculate scores for next-best prediction
-    const scores = uplinks.filter(u => u.enabled && u.available && !u.active).map(u => {
-        // Score: lower is better (like daemon logic)
-        const score = (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10;
-        return { name: u.name, score };
-    }).sort((a, b) => a.score - b.score);
-    
-    // Calculate probabilities (inverse of score, normalized)
-    const totalInvScore = scores.reduce((sum, s) => sum + (1000 / (s.score + 1)), 0);
-    const nextBest = {};
-    console.log("Scores:", scores);
-    scores.forEach((s, i) => {
-    console.log("nextBest:", nextBest);
-        const prob = Math.round(((1000 / (s.score + 1)) / totalInvScore) * 100);
-    console.log("nextBest:", nextBest);
-        nextBest[s.name] = { rank: i + 1, prob };
-    console.log("nextBest:", nextBest);
-    });
-    console.log("nextBest:", nextBest);
+    const container = document.getElementById('uplinks-list');
+    const avail = uplinks.filter(u => u.enabled && u.available && !u.active);
+    // Score and rank non-active available uplinks for prediction
+    const scored = avail.map(u => ({
+        name: u.name,
+        score: (u.rtt_ms||999) + (u.risk_now||0)*100 + (u.loss_pct||0)*10
+    })).sort((a,b) => a.score - b.score);
+    const totalInv = scored.reduce((s,x) => s + 1000/(x.score+1), 0);
+    const preds = scored.map(x => ({name:x.name, prob:Math.round((1000/(x.score+1))/totalInv*100)}));
+    const predMap = {};
+    preds.forEach((p,i) => { predMap[p.name] = {rank:i, prob:p.prob}; });
 
-    uplinks.forEach(u => {
-        
-        const typeClass = u.name.startsWith('cell') ? 'lte' : 
-                         u.name.startsWith('sl') ? 'starlink' : 'fiber';
-        const carrierClass = u.cellular?.carrier === 'AT&T' ? 'att' : '';
-        const activeClass = u.active ? 'active' : (nextBest[u.name]?.rank === 1 ? 'next-best' : '');
-        const availClass = u.available ? '' : 'unavailable';
-        
-        // Update sparkline data
-        if (!sparkData[u.name]) sparkData[u.name] = [];
-        sparkData[u.name].push(u.rtt_ms || 0);
-        if (sparkData[u.name].length > 30) sparkData[u.name].shift();
-        
-        let metricsHtml = '';
-        if (u.name.startsWith('cell')) {
-            metricsHtml = `
-                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value ${u.rtt_ms > 100 ? 'warn' : ''}">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
-                <div class="metric"><div class="metric-label">RSRP${getSignalBars(u.cellular?.rsrp||0)}</div><div class="metric-value ${(u.cellular?.rsrp||0) < -100 ? 'warn' : ''}">${(u.cellular?.rsrp||0).toFixed(0)}</div></div>
-                <div class="metric"><div class="metric-label">SINR</div><div class="metric-value">${(u.cellular?.sinr||0).toFixed(1)}</div></div>
-                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value ${u.loss_pct > 2 ? 'bad' : ''}">${(u.loss_pct||0).toFixed(1)}%</div></div>
-                <div class="metric"><div class="metric-label">Carrier</div><div class="metric-value">${u.cellular?.carrier||'--'}</div></div>
-                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value ${u.risk_now > 0.5 ? 'warn' : ''}">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
-            `;
-        } else if (u.name.startsWith('sl')) {
-            metricsHtml = `
-                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value ${u.rtt_ms > 80 ? 'warn' : ''}">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
-                <div class="metric"><div class="metric-label">State</div><div class="metric-value">${u.starlink?.state?.slice(0,6)||'--'}</div></div>
-                <div class="metric"><div class="metric-label">OBSTR<span class="obstr-indicator ${u.starlink?.obstruction_pct > 5 ? 'obstructed' : 'clear'}"></span></div><div class="metric-value ${u.starlink?.obstructed ? 'bad' : ''}">${(u.starlink?.obstruction_pct || 0).toFixed(1)}%</div></div>
-                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value ${u.loss_pct > 2 ? 'bad' : ''}">${(u.loss_pct||0).toFixed(1)}%</div></div>
-                <div class="metric"><div class="metric-label">ETA</div><div class="metric-value">${u.starlink?.eta > 0 ? u.starlink.eta + 's' : '--'}</div></div>
-                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value ${u.risk_now > 0.5 ? 'warn' : ''}">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
-            `;
-        } else {
-            metricsHtml = `
-                <div class="metric"><div class="metric-label">RTT</div><div class="metric-value">${(u.rtt_ms||0).toFixed(0)}ms</div></div>
-                <div class="metric"><div class="metric-label">Loss</div><div class="metric-value">${(u.loss_pct||0).toFixed(1)}%</div></div>
-                <div class="metric"><div class="metric-label">Risk</div><div class="metric-value">${((u.risk_now||0)*100).toFixed(0)}%</div></div>
-            `;
+    container.innerHTML = uplinks.map(u => {
+        const isActive = u.name === activeUplink;
+        const cls = [
+            'uplink-card',
+            UPLINK_TYPES[u.name]||'',
+            isActive?'active':'',
+            !u.available?'unavailable':'',
+            !u.enabled?'disabled-uplink':''
+        ].filter(Boolean).join(' ');
+
+        const rtt = u.rtt_ms!=null ? u.rtt_ms : null;
+        const loss = u.loss_pct!=null ? u.loss_pct : null;
+        const risk = u.risk_now!=null ? u.risk_now : null;
+        const rttStr = rtt!=null ? rtt.toFixed(0)+'ms' : '--';
+        const lossStr = loss!=null ? loss.toFixed(1)+'%' : '--';
+        const rttCls = rtt==null?'na':rtt>150?'bad':rtt>80?'warn':'good';
+        const lossCls = loss==null?'na':loss>5?'bad':loss>1?'warn':'good';
+        const riskVal = risk!=null ? risk : 0;
+        const riskColor = riskVal>.5?'var(--red)':riskVal>.2?'var(--yellow)':'var(--green)';
+        const riskLbl = riskVal>.5?'HIGH':riskVal>.2?'WARN':'OK';
+
+        // Extra metrics for cell/starlink
+        let extraHtml = '';
+        if (u.cellular) {
+            const rsrp = u.cellular.rsrp!=null?u.cellular.rsrp.toFixed(0):'--';
+            const sinr = u.cellular.sinr!=null?u.cellular.sinr.toFixed(0):'--';
+            extraHtml = `<div class="metrics-row" style="margin-top:3px">
+                <div class="m-cell"><div class="m-lbl">RSRP</div><div class="m-val ${u.cellular.rsrp<-110?'bad':u.cellular.rsrp<-100?'warn':'good'}">${rsrp}</div></div>
+                <div class="m-cell"><div class="m-lbl">SINR</div><div class="m-val ${u.cellular.sinr<5?'bad':u.cellular.sinr<10?'warn':'good'}">${sinr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Carrier</div><div class="m-val" style="font-size:8px">${u.cellular.carrier||'--'}</div></div>
+            </div>`;
+        } else if (u.starlink) {
+            const lat = u.starlink.latency!=null?u.starlink.latency.toFixed(0)+'ms':'--';
+            const obs = u.starlink.obstruction_pct!=null?u.starlink.obstruction_pct.toFixed(0)+'%':'--';
+            extraHtml = `<div class="metrics-row" style="margin-top:3px">
+                <div class="m-cell"><div class="m-lbl">SL Lat</div><div class="m-val">${lat}</div></div>
+                <div class="m-cell"><div class="m-lbl">Obstr</div><div class="m-val ${u.starlink.obstruction_pct>20?'warn':'good'}">${obs}</div></div>
+                <div class="m-cell"><div class="m-lbl">State</div><div class="m-val" style="font-size:8px">${u.starlink.state||'--'}</div></div>
+            </div>`;
         }
-        
-        // Sparkline bars
-        const sparkHtml = sparkData[u.name].map(v => {
-            const h = Math.max(1, Math.min(14, v / 10));
-            const cls = v > 150 ? 'bad' : v > 80 ? 'warn' : '';
-            return `<div class="spark-bar ${cls}" style="height:${h}px"></div>`;
-        }).join('');
-        
-        const card = document.createElement('div');
-        card.className = `uplink-card ${typeClass} ${carrierClass} ${activeClass} ${availClass}`;
-        card.setAttribute('data-name', u.name);
-        if (nextBest[u.name]) {
-            card.setAttribute('data-rank', nextBest[u.name].rank);
-            card.setAttribute('data-prob', nextBest[u.name].prob + '%');
+
+        // Prediction badge
+        let predHtml = '';
+        const p = predMap[u.name];
+        if (p && !isActive) {
+            const cls2 = p.rank===0?'next':p.rank===1?'second':'third';
+            const label = p.rank===0?'NEXT':p.rank===1?'2ND':'3RD';
+            predHtml = `<div class="pred-badge ${cls2}">${label} ${p.prob}%</div>`;
         }
-        card.innerHTML = `
-            <div class="uplink-header">
-                <span class="uplink-name">${u.name.toUpperCase()}</span>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <span class="uplink-type">${typeClass}</span>
-                    <div class="uplink-toggle ${u.enabled !== false ? 'enabled' : ''}" onclick="toggleUplink('${u.name}')" title="Toggle uplink"></div>
+
+        return `<div class="${cls}" data-name="${u.name}">
+            ${predHtml}
+            <div class="uplink-hdr">
+                <div>
+                    <span class="uplink-name">${UPLINK_LABELS[u.name]||u.name}</span>
+                    <span class="uplink-type">${UPLINK_TYPE_LABELS[u.name]||''}</span>
                 </div>
+                <div class="uplink-toggle ${u.enabled?'enabled':''}" onclick="event.stopPropagation();toggleUplink('${u.name}')"></div>
             </div>
-            <div class="metrics-grid">${metricsHtml}</div>
-            <div class="sparkline">${sparkHtml}</div>
-            <div class="uplink-actions">
-                <button class="btn-fail" onclick="forceFail('${u.name}')">FORCE FAIL</button>
-                <button class="btn-fail" style="border-color:var(--blue);color:var(--blue)" onclick="forceSwitch('${u.name}')">FORCE ACTIVE</button>
+            <div class="metrics-row">
+                <div class="m-cell"><div class="m-lbl">RTT</div><div class="m-val ${rttCls}">${rttStr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Loss</div><div class="m-val ${lossCls}">${lossStr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Fail</div><div class="m-val ${u.consec_fail>0?'bad':'good'}">${u.consec_fail||0}</div></div>
             </div>
-        `;
-        container.appendChild(card);
-    });
+            ${extraHtml}
+            <div class="risk-wrap">
+                <div class="risk-bar"><div class="risk-fill" style="width:${Math.min(100,riskVal*100)}%;background:${riskColor}"></div></div>
+                <span class="risk-lbl" style="color:${riskColor}">${riskLbl}</span>
+            </div>
+        </div>`;
+    }).join('');
 }
 
-function updateStatus(s) {
+// ─── Main SSE update ───
+let smoothDown=0, smoothUp=0;
+function updateDashboard(s) {
     // Mode badge
-    const modeBadge = document.getElementById('mode-badge');
-    modeBadge.textContent = s.mode || 'OFFLINE';
-    modeBadge.className = 'badge mode-' + (s.mode || 'offline').toLowerCase();
-    
-    // State badge  
-    const stateBadge = document.getElementById('state-badge');
-    stateBadge.textContent = s.state || 'OFFLINE';
-    stateBadge.className = 'badge state-' + (s.state || 'offline').toLowerCase();
-    
-    // Training banner
-    document.getElementById('training-banner').classList.toggle('active', s.mode === 'TRAINING');
-    
-    // Speed
-    document.getElementById('speed-val').textContent = Math.round(s.gps?.speed_mph || 0);
-    
-    // Node ID
-    document.getElementById('node-id').textContent = s.node_id || '--';
-    document.getElementById('run-id').textContent = s.run_id || '--';
-    
-    // Duplication
-    document.getElementById('dup-status').textContent = s.dup_enabled ? 'ON' : 'OFF';
-    document.getElementById('dup-status').style.color = s.dup_enabled ? 'var(--orange)' : 'var(--muted)';
-    
-    // Countdown panel
-    const inProtection = ['PROTECT', 'SWITCHING', 'HOLDING'].includes(s.state);
-    document.getElementById('countdown-panel').classList.toggle('active', inProtection);
-    if (inProtection) {
-        document.getElementById('trigger-reason').textContent = s.trigger || '--';
-        document.getElementById('cd-hold').textContent = s.hold_remaining || 0;
-        document.getElementById('cd-clean').textContent = s.clean_remaining || 0;
-        document.getElementById('cd-switches').textContent = s.switches_this_window || 0;
+    const modeBadge = document.getElementById('badge-mode');
+    modeBadge.textContent = s.mode;
+    modeBadge.className = 'badge mode-' + s.mode.toLowerCase();
+
+    // State badge
+    const stateBadge = document.getElementById('badge-state');
+    stateBadge.textContent = s.state;
+    stateBadge.className = 'badge st-' + s.state.toLowerCase();
+
+    // Dup badge
+    const dupBadge = document.getElementById('badge-dup');
+    if (s.dup_enabled) { dupBadge.textContent='DUP ON'; dupBadge.style.background='rgba(0,255,136,.12)'; dupBadge.style.color='var(--green)'; }
+    else { dupBadge.textContent='DUP OFF'; dupBadge.style.background='rgba(100,100,100,.15)'; dupBadge.style.color='var(--muted)'; }
+
+    // Active uplink — TRUTH from daemon
+    const activeUplink = s.active_uplink || '--';
+    const banner = document.getElementById('active-banner');
+    document.getElementById('active-path-name').textContent = (UPLINK_LABELS[activeUplink]||activeUplink).toUpperCase();
+    document.getElementById('active-path-detail').textContent =
+        `Mode: ${s.mode} | State: ${s.state} | Switches: ${s.switches_this_window||0}`;
+    banner.className = 'active-path-banner' + (s.state!=='NORMAL'?' warn':'');
+
+    // Controller badge
+    document.getElementById('ctrl-badge').textContent = 'CTRL-' + (s.active_controller===1?'B':'A');
+
+    // Last command badge
+    if (s.last_cmd) {
+        document.getElementById('cmd-badge').textContent = s.last_cmd.detail || s.last_cmd.result || '--';
     }
-    
-    // Flap banner
-    document.getElementById('flap-banner').classList.toggle('active', s.flap_suppressed);
-    
-    // Risk
-    const riskPct = Math.round((s.global_risk || 0) * 100);
-    document.getElementById('risk-pct').textContent = riskPct + '%';
-    document.getElementById('risk-pct').style.color = riskPct > 60 ? 'var(--red)' : riskPct > 30 ? 'var(--yellow)' : 'var(--green)';
-    document.getElementById('risk-fill').style.width = riskPct + '%';
-    
-    const recEl = document.getElementById('risk-rec');
-    recEl.textContent = s.recommendation || 'NORMAL';
-    if (s.recommendation === 'PROTECT') {
-        recEl.style.background = 'rgba(255,102,0,0.2)';
-        recEl.style.color = 'var(--orange)';
-    } else if (s.recommendation === 'PREPARE') {
-        recEl.style.background = 'rgba(255,170,0,0.2)';
-        recEl.style.color = 'var(--yellow)';
-    } else {
-        recEl.style.background = 'rgba(0,255,136,0.2)';
-        recEl.style.color = 'var(--green)';
-    }
-    
-    // GPS
-    if (s.gps?.valid) {
-        document.getElementById('gps-coords').textContent = 
-            s.gps.lat.toFixed(6) + ', ' + s.gps.lon.toFixed(6);
-        document.getElementById('gps-heading').textContent = Math.round(s.gps.heading || 0);
-        document.getElementById('gps-alt').textContent = Math.round(s.gps.alt || 0);
-        
-        const latlng = [s.gps.lat, s.gps.lon];
-        if (posMarker) {
-            posMarker.setLatLng(latlng);
-        } else {
-            posMarker = L.circleMarker(latlng, {
-                radius: 8, fillColor: '#00d4ff', fillOpacity: 1, 
-                color: '#fff', weight: 2
-            }).addTo(map);
-            map.setView(latlng, 15);
-        }
-        
-        // Trail
-        trail.push(latlng);
-        if (trail.length > 500) trail.shift();
-        trailLine.setLatLngs(trail);
-    }
-    
-    // Controller
-    document.getElementById('ctrl-active').textContent = 
-        s.active_controller === 0 ? 'Controller A' : 'Controller B';
-    
+
     // Uplinks
-    if (s.uplinks) {
-        renderUplinks(s.uplinks);
+    const uplinks = s.uplinks || [];
+    renderUplinks(uplinks, activeUplink);
+
+    // KPIs
+    const avail = uplinks.filter(u => u.enabled && u.available);
+    const enabled = uplinks.filter(u => u.enabled);
+    document.getElementById('kpi-paths').textContent = avail.length + '/' + enabled.length;
+
+    if (avail.length > 0) {
+        const sorted = [...avail].sort((a,b) => (a.rtt_ms||999)-(b.rtt_ms||999));
+        document.getElementById('kpi-best').textContent = (sorted[0].rtt_ms||0).toFixed(0) + 'ms';
+        document.getElementById('kpi-best-name').textContent = (UPLINK_LABELS[sorted[0].name]||sorted[0].name);
     }
-    
-    // Mode buttons
-    ['training', 'tripwire', 'mirror'].forEach(m => {
-        document.getElementById('btn-' + m).classList.toggle('active', 
-            s.mode?.toLowerCase() === m);
-    });
+
+    // Global risk
+    const gr = s.global_risk!=null ? s.global_risk : 0;
+    const riskEl = document.getElementById('kpi-risk');
+    riskEl.textContent = gr.toFixed(2);
+    riskEl.style.color = gr>.5?'var(--red)':gr>.2?'var(--yellow)':'var(--green)';
+
+    // Uptime
+    if (s.run_id) {
+        const m = s.run_id.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+        if (m) {
+            const start = new Date(m[1],m[2]-1,m[3],m[4],m[5],m[6]);
+            const mins = Math.floor((Date.now()-start)/60000);
+            document.getElementById('kpi-uptime').textContent = Math.floor(mins/60)+'h '+mins%60+'m';
+        }
+    }
+
+    // Throughput — use 50/50 smoothing (faster response)
+    const dMbps = s.throughput_down_mbps||0;
+    const uMbps = s.throughput_up_mbps||0;
+    smoothDown = smoothDown * 0.5 + dMbps * 0.5;
+    smoothUp = smoothUp * 0.5 + uMbps * 0.5;
+    document.getElementById('speed-down').textContent = smoothDown.toFixed(1);
+    document.getElementById('speed-up').textContent = smoothUp.toFixed(1);
+
+    // Throughput bars (scale to 100 Mbps max, auto-scale)
+    const maxTp = Math.max(10, smoothDown*1.5, smoothUp*1.5);
+    document.getElementById('tp-down-fill').style.width = Math.min(100, smoothDown/maxTp*100)+'%';
+    document.getElementById('tp-up-fill').style.width = Math.min(100, smoothUp/maxTp*100)+'%';
+    document.getElementById('tp-down-val').textContent = smoothDown.toFixed(1)+' Mbps';
+    document.getElementById('tp-up-val').textContent = smoothUp.toFixed(1)+' Mbps';
+
+    // Prediction section
+    const activeU = uplinks.find(u => u.active);
+    const nonActive = avail.filter(u => !u.active);
+    const scored = nonActive.map(u => ({
+        name:u.name, score:(u.rtt_ms||999)+(u.risk_now||0)*100+(u.loss_pct||0)*10
+    })).sort((a,b)=>a.score-b.score);
+    const totalInv = scored.reduce((s,x)=>s+1000/(x.score+1),0);
+    const probs = scored.map(x=>({name:x.name,prob:Math.round((1000/(x.score+1))/totalInv*100)}));
+
+    document.getElementById('pred-active').textContent = activeU ? activeU.name.toUpperCase() : '--';
+    document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase()+' ('+probs[0].prob+'%)' : '--';
+    document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase()+' ('+probs[1].prob+'%)' : '--';
+    document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase()+' ('+probs[2].prob+'%)' : '--';
+
+    // GPS / Map
+    if (s.gps && s.gps.valid && s.gps.lat !== 0) {
+        document.getElementById('gps-label').textContent = `GPS: ${s.gps.lat.toFixed(5)}, ${s.gps.lon.toFixed(5)}`;
+        document.getElementById('gps-speed').textContent = (s.gps.speed_mph||0).toFixed(0) + ' mph';
+        if (map && !mapDragging) map.setView([s.gps.lat, s.gps.lon], 15);
+        if (mapMarker) mapMarker.setLatLng([s.gps.lat, s.gps.lon]);
+    }
 }
 
-function addFeedItem(type, msg, reason) {
-    const feed = document.getElementById('feed');
-    const now = new Date();
-    const ts = now.toTimeString().split(' ')[0] + '.' + 
-               String(now.getMilliseconds()).padStart(3, '0');
-    
-    const item = document.createElement('div');
-    item.className = 'feed-item ' + type;
-    item.innerHTML = `
-        <div class="feed-time">${ts}</div>
-        <div class="feed-msg">${msg}${reason ? ' <span class="feed-reason">[' + reason + ']</span>' : ''}</div>
-    `;
-    feed.insertBefore(item, feed.firstChild);
-    if (feed.children.length > 100) feed.removeChild(feed.lastChild);
-}
-
-// API calls
-async function setMode(mode) {
-    await fetch('/api/control/mode', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({mode})
-    });
-    addFeedItem('mode', 'Mode changed to ' + mode.toUpperCase());
-}
-
-async function forceSwitch(uplink) {
-    _uplinkInteractionLock = Date.now() + 2000;
-    await fetch('/api/control/force', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({uplink})
-    });
-    addFeedItem('switch', 'Manual switch to ' + uplink.toUpperCase());
-}
-
-async function forceFail(uplink) {
-    _uplinkInteractionLock = Date.now() + 2000;
-    console.log("forceFail called:", uplink);
-    await fetch('/api/control/fail', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({uplink})
-    });
-    addFeedItem('tripwire', 'Force fail on ' + uplink.toUpperCase(), 'manual');
-}
-
-async function triggerProtection() {
-    await fetch('/api/control/trigger', {method: 'POST'});
-    addFeedItem('tripwire', 'Manual protection trigger', 'operator');
-}
-
-async function switchController(ctrl) {
-    await fetch('/api/control/controller', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({controller: ctrl})
-    });
-    addFeedItem('switch', 'Controller switch to ' + (ctrl === 0 ? 'A' : 'B'));
-}
-
-// SSE connection
+// ─── SSE Connection ───
 let lastState = '';
 const evtSource = new EventSource('/api/stream');
 evtSource.onmessage = (e) => {
-    const status = JSON.parse(e.data);
-    
-    // Detect state changes for feed
-    if (status.state !== lastState && lastState) {
-        if (status.state === 'PROTECT') {
-            addFeedItem('tripwire', 'Protection activated', status.trigger);
-        } else if (status.state === 'NORMAL' && lastState !== 'NORMAL') {
-            addFeedItem('predict', 'Returned to normal operation');
-        }
+    const s = JSON.parse(e.data);
+    if (s.state !== lastState && lastState) {
+        if (s.state==='PROTECT') addLogEntry('trigger','TRIPWIRE fired: '+s.trigger);
+        else if (s.state==='NORMAL'&&lastState!=='NORMAL') addLogEntry('info','Returned to NORMAL');
     }
-    lastState = status.state;
-    
-    checkStateChanges(status);
-    updateStatus(status);
-    updateStats(status);
+    lastState = s.state;
+    checkStateChanges(s);
+    updateDashboard(s);
 };
-evtSource.onerror = () => {
-    console.log('SSE reconnecting...');
-};
+evtSource.onerror = () => { console.log('SSE reconnecting...'); };
 
-// Initial load
-fetch('/api/status').then(r => r.json()).then(updateStatus).catch(() => {});
-
-// Event Log
+// ─── Event Log ───
 const eventLog = [];
-let logFilter = "all";
+let logFilter = 'all';
 
 function addLogEntry(level, msg, gps, persist=true) {
     const now = new Date();
-    const ts = now.toTimeString().split(" ")[0] + "." + String(now.getMilliseconds()).padStart(3, "0");
-    const entry = { time: ts, level, msg, gps: gps || null, timestamp: now };
-    eventLog.push(entry);
-    if (eventLog.length > 500) eventLog.shift();
-    if (persist) { fetch("/api/log/write", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({type:level,message:msg,detail:gps||""})}).catch(()=>{}); }
+    const ts = now.toTimeString().split(' ')[0]+'.'+String(now.getMilliseconds()).padStart(3,'0');
+    eventLog.push({time:ts, level, msg, gps:gps||null, timestamp:now});
+    if (eventLog.length>500) eventLog.shift();
+    if (persist) fetch('/api/log/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:level,message:msg,detail:gps||''})}).catch(()=>{});
     renderLog();
 }
 
 function renderLog() {
-    const container = document.getElementById("event-log-content");
-    const filtered = logFilter === "all" ? eventLog : eventLog.filter(e => e.level === logFilter);
-    container.innerHTML = filtered.slice(-100).map(e => `
-        <div class="log-entry">
-            <span class="log-time">${e.time}</span>
-            <span class="log-level ${e.level}">${e.level.toUpperCase()}</span>
-            <span class="log-msg">${e.msg}</span>
-            ${e.gps ? `<span class="log-gps">[${e.gps}]</span>` : ""}
-        </div>
-    `).join("");
-    container.scrollTop = container.scrollHeight;
+    const c = document.getElementById('event-log-content');
+    const f = logFilter==='all'?eventLog:eventLog.filter(e=>e.level===logFilter);
+    c.innerHTML = f.slice(-100).map(e=>`<div class="log-entry">
+        <span class="log-time">${e.time}</span>
+        <span class="log-level ${e.level}">${e.level.toUpperCase()}</span>
+        <span class="log-msg">${e.msg}</span>
+        ${e.gps?`<span class="log-gps">[${e.gps}]</span>`:''}
+    </div>`).join('');
+    c.scrollTop = c.scrollHeight;
 }
 
-function filterLog(filter) {
+function filterLog(filter, el) {
     logFilter = filter;
-    document.querySelectorAll(".event-log-controls button").forEach(b => b.classList.remove("active"));
-    event.target.classList.add("active");
+    document.querySelectorAll('.log-controls .log-btn').forEach(b=>b.classList.remove('active'));
+    if(el) el.classList.add('active');
     renderLog();
 }
 
 function exportLog() {
-    const csv = "Time,Level,Message,GPS\n" + eventLog.map(e =>
-        `${e.time},${e.level},"${e.msg}",${e.gps||""}`
-    ).join("\n");
-    const blob = new Blob([csv], {type: "text/csv"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "pathsteer_log_" + new Date().toISOString().slice(0,19).replace(/:/g,"-") + ".csv";
+    const csv='Time,Level,Message,GPS\n'+eventLog.map(e=>`${e.time},${e.level},"${e.msg}",${e.gps||''}`).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download='pathsteer_log_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.csv';
     a.click();
 }
 
-// Log state changes
-let prevState = null, prevMode = null, prevActive = null;
+// ─── State change tracking ───
+let prevState=null, prevMode=null, prevActive=null;
+var llmCostPerToken=0.002, llmSavedDollars=0, llmFailoverCount=0;
+
 function checkStateChanges(s) {
-    const gps = s.gps?.valid ? `${s.gps.lat.toFixed(5)},${s.gps.lon.toFixed(5)}` : null;
-    if (prevState !== s.state && prevState !== null) {
-        if (s.state === "PROTECT") addLogEntry("trigger", `TRIPWIRE fired: ${s.trigger}`, gps);
-        else if (s.state === "SWITCHING") addLogEntry("warn", "Executing path switch", gps);
-        else if (s.state === "HOLDING") addLogEntry("switch", `Switched to ${s.active_uplink}`, gps);
-        else if (s.state === "NORMAL") addLogEntry("info", "Returned to NORMAL", gps);
+    const gps = s.gps?.valid?`${s.gps.lat.toFixed(5)},${s.gps.lon.toFixed(5)}`:null;
+    if (prevState!==s.state && prevState!==null) {
+        if (s.state==='PROTECT') addLogEntry('trigger',`TRIPWIRE fired: ${s.trigger}`,gps);
+        else if (s.state==='SWITCHING') addLogEntry('warn','Executing path switch',gps);
+        else if (s.state==='HOLDING') addLogEntry('switch',`Switched to ${s.active_uplink}`,gps);
+        else if (s.state==='NORMAL') addLogEntry('info','Returned to NORMAL',gps);
     }
-    if (prevMode !== s.mode && prevMode !== null) addLogEntry("info", `Mode changed to ${s.mode}`, gps);
-    if (prevActive !== s.active_uplink && prevActive !== null) addLogEntry("switch", `Active uplink: ${prevActive} → ${s.active_uplink}`, gps);
-    // LLM failover savings tracking
-    if (prevActive !== s.active_uplink && prevActive !== null) {
-        fetch("/api/llm/status").then(r=>r.json()).then(d=>{
-            if(d.running && d.total_tokens > 0) {
-                let sessionValue = d.total_tokens * llmCostPerToken;
-                llmSavedDollars += sessionValue;
-                llmFailoverCount++;
-                addLogEntry("switch", `💰 LLM failover saved $${sessionValue.toFixed(4)} (total saved: $${llmSavedDollars.toFixed(4)})`, gps);
+    if (prevMode!==s.mode && prevMode!==null) addLogEntry('info',`Mode: ${s.mode}`,gps);
+    if (prevActive!==s.active_uplink && prevActive!==null) {
+        addLogEntry('switch',`Active: ${prevActive} → ${s.active_uplink}`,gps);
+        // LLM failover value
+        fetch('/api/llm/status').then(r=>r.json()).then(d=>{
+            if(d.running && d.total_tokens>0){
+                let v=d.total_tokens*llmCostPerToken;
+                llmSavedDollars+=v; llmFailoverCount++;
+                addLogEntry('switch',`💰 LLM failover saved $${v.toFixed(4)}`,gps);
             }
-        }).catch(e=>{});
+        }).catch(()=>{});
     }
-    prevState = s.state; prevMode = s.mode; prevActive = s.active_uplink;
+    prevState=s.state; prevMode=s.mode; prevActive=s.active_uplink;
 }
 
-// Startup log
-addLogEntry("info", "PathSteer Guardian UI connected", null, false);
-
-// Update stats from status
-function updateStats(s) {
-    // Find best/worst RTT
-    const available = (s.uplinks || []).filter(u => u.enabled && u.available);
-    if (available.length > 0) {
-        const sorted = [...available].sort((a,b) => (a.rtt_ms||999) - (b.rtt_ms||999));
-        document.getElementById('stat-best-path').textContent = sorted[0].name.toUpperCase() + ' (' + (sorted[0].rtt_ms||0).toFixed(0) + 'ms)';
-        document.getElementById('stat-worst-path').textContent = sorted[sorted.length-1].name.toUpperCase() + ' (' + (sorted[sorted.length-1].rtt_ms||0).toFixed(0) + 'ms)';
-        document.getElementById('stat-diversity').textContent = available.length + '/' + (s.uplinks||[]).filter(u=>u.enabled).length;
-        
-        // Path Prediction update
-        const activeUplink = (s.uplinks || []).find(u => u.active);
-        const nonActive = available.filter(u => !u.active);
-        const scored = nonActive.map(u => ({
-            name: u.name,
-            score: (u.rtt_ms || 999) + (u.risk_now || 0) * 100 + (u.loss_pct || 0) * 10
-        })).sort((a, b) => a.score - b.score);
-        
-        const totalInv = scored.reduce((s, x) => s + 1000/(x.score+1), 0);
-        const probs = scored.map(x => ({ name: x.name, prob: Math.round((1000/(x.score+1))/totalInv*100) }));
-        
-        document.getElementById('pred-active').textContent = activeUplink ? activeUplink.name.toUpperCase() : '--';
-        document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase() + ' (' + probs[0].prob + '%)' : '--';
-        document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase() + ' (' + probs[1].prob + '%)' : '--';
-        document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase() + ' (' + probs[2].prob + '%)' : '--';
-    }
-    
-    // Throughput (placeholder - would come from actual traffic stats)
-    const downMbps2 = s.throughput_down_mbps || 0;
-    const upMbps2 = s.throughput_up_mbps || 0;
-    if(!window._smoothDown) window._smoothDown = 0;
-    if(!window._smoothUp) window._smoothUp = 0;
-    window._smoothDown = window._smoothDown * 0.7 + downMbps2 * 0.3;
-    window._smoothUp = window._smoothUp * 0.7 + upMbps2 * 0.3;
-    
-    // Session uptime
-    if (s.run_id) {
-        const parts = s.run_id.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
-        const start = parts ? new Date(parts[1], parts[2]-1, parts[3], parts[4], parts[5], parts[6]) : new Date();
-        const now = new Date();
-        const mins = Math.floor((now - start) / 60000);
-        const hrs = Math.floor(mins / 60);
-        document.getElementById('stat-uptime').textContent = hrs + 'h ' + (mins % 60) + 'm';
-    }
-}
-
-// Toggle uplink enabled
+// ─── Actions ───
 async function toggleUplink(name) {
-    _uplinkInteractionLock = Date.now() + 2000;
-    const resp = await fetch('/api/uplink/toggle', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: name})
-    });
-    const data = await resp.json();
-    console.log('Toggled', name, data);
-    
-    // Immediately update the toggle UI
+    _uplinkInteractionLock = Date.now()+2000;
+    const r = await fetch('/api/uplink/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const d = await r.json();
     const card = document.querySelector(`.uplink-card[data-name="${name}"]`);
-    if (card) {
-        const toggle = card.querySelector('.uplink-toggle');
-        if (toggle) {
-            toggle.classList.toggle('enabled', data.enabled);
-        }
-        // Also dim/undim the card
-        card.style.opacity = data.enabled ? '1' : '0.5';
+    if(card){
+        const t=card.querySelector('.uplink-toggle');
+        if(t) t.classList.toggle('enabled',d.enabled);
+        card.style.opacity=d.enabled?'1':'0.5';
     }
 }
 
-/* Load event history from database */
-async function loadEventHistory() {
+async function forceActive(name) {
+    await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:name})});
+    addLogEntry('switch','Force → '+name.toUpperCase(),'manual');
+}
+
+async function forceFail(name) {
+    await fetch('/api/control/fail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:name})});
+    addLogEntry('trigger','Force fail → '+name.toUpperCase(),'manual');
+}
+
+async function clearForce() {
+    await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:'auto'})});
+    addLogEntry('info','Cleared force → AUTO');
+}
+
+async function triggerProtection() {
+    await fetch('/api/control/trigger',{method:'POST'});
+    addLogEntry('trigger','Manual protection trigger','operator');
+}
+
+async function switchController(ctrl) {
+    await fetch('/api/control/controller',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({controller:ctrl})});
+    addLogEntry('switch','Controller → '+(ctrl===0?'A':'B'));
+}
+
+// ─── Diagnostics fetch ───
+async function fetchDiagnostics() {
     try {
-        const resp = await fetch("/api/events/history?limit=50");
-        const events = await resp.json();
-        events.reverse().forEach(e => {
-            const ts = e.timestamp ? e.timestamp.split(" ")[1] || e.timestamp.substring(11,19) : "";
-            /* Add to Event Log (bottom) */
-            eventLog.push({time: ts, level: e.type, msg: e.message, gps: e.detail || null, timestamp: new Date(e.timestamp)});
+        const [mR, pR, nR] = await Promise.all([
+            fetch('/diag/api/metrics'), fetch('/diag/api/path'), fetch('/diag/api/namespaces')
+        ]);
+        const metrics=await mR.json(), path=await pR.json(), ns=await nR.json();
+
+        const fo=metrics.failover||{}, st=metrics.stability||{}, ld=metrics.load||{};
+        document.getElementById('fo-tests').textContent=fo.total_tests||0;
+        document.getElementById('fo-success').textContent=(fo.success_rate||0)+'%';
+        document.getElementById('fo-det50').textContent=(fo.detection_p50||0)+' ms';
+        document.getElementById('fo-det95').textContent=(fo.detection_p95||0)+' ms';
+        document.getElementById('fo-worst').textContent=(fo.worst_total_ms||0)+' ms';
+
+        document.getElementById('stab-avail').textContent=(st.availability_pct||0).toFixed(2)+'%';
+        document.getElementById('stab-uptime').textContent=st.uptime_display||'--';
+        document.getElementById('stab-mtbf').textContent=st.mtbf_display||'--';
+        document.getElementById('stab-fails').textContent=st.total_failures||0;
+        document.getElementById('stab-flaps').textContent=st.route_flaps||0;
+
+        const cp=ld.cpu_pct||0;
+        const cpEl=document.getElementById('sys-cpu');
+        cpEl.textContent=cp.toFixed(1)+'%';
+        cpEl.style.color=cp>80?'var(--red)':cp>50?'var(--yellow)':'var(--green)';
+        document.getElementById('sys-load').textContent=(ld.load_1m||0).toFixed(2)+' / '+(ld.load_5m||0).toFixed(2);
+        document.getElementById('sys-mem').textContent=(ld.mem_used_mb||0)+'/'+(ld.mem_total_mb||0)+' MB ('+(ld.mem_pct||0).toFixed(0)+'%)';
+
+        // Active path verify
+        const lb={fa:'FIBER A',fb:'FIBER B',sl_a:'SL_A',sl_b:'SL_B',cell_a:'CELL_A',cell_b:'CELL_B'};
+        document.getElementById('apv-route').textContent=lb[path.active_from_route]||path.active_from_route||'--';
+        document.getElementById('apv-daemon').textContent=lb[path.daemon_says]||path.daemon_says||'--';
+        const matchEl=document.getElementById('apv-match');
+        matchEl.textContent=path.match?'✓ YES':'✗ NO';
+        matchEl.className='stat-val '+(path.match?'good':'bad');
+        const srcEl=document.getElementById('apv-src');
+        srcEl.textContent=path.has_src?'✓ YES':'✗ NO';
+        srcEl.className='stat-val '+(path.has_src?'good':'bad');
+
+        // Namespaces
+        document.getElementById('ns-grid').innerHTML=Object.entries(ns).map(([n,i])=>
+            `<div class="ns-card ${i.exists&&i.ipv4_forward?'healthy':'unhealthy'}">
+                <div class="ns-name">${n}</div>
+                <div class="ns-det">${i.exists?'<span style="color:var(--green)">UP</span>':'<span style="color:var(--red)">DOWN</span>'}
+                 | IFs: ${i.ifaces_up||0} | Fwd4: ${i.ipv4_forward?'✓':'✗'} Fwd6: ${i.ipv6_forward?'✓':'✗'}</div>
+            </div>`
+        ).join('');
+    } catch(e) { console.error('Diag fetch error:', e); }
+}
+
+// ─── WG Tunnel fetch ───
+const fmtB=b=>b>=1073741824?(b/1073741824).toFixed(1)+' GiB':b>=1048576?(b/1048576).toFixed(1)+' MiB':b>=1024?(b/1024).toFixed(0)+' KiB':b+' B';
+
+async function fetchTunnels(probe) {
+    try {
+        const r = await fetch(probe?'/diag/api/tunnels?probe=true':'/diag/api/tunnels');
+        const d = await r.json();
+        renderTunnels(d.tunnels||[]);
+    } catch(e) { console.error('Tunnel fetch error:', e); }
+}
+
+function renderTunnels(T) {
+    const tb=document.getElementById('tun-tbody');
+    if(!T.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted)">No data</td></tr>';return;}
+    let up=0,stale=0,down=0,rx=0,tx=0;
+    tb.innerHTML=T.map(t=>{
+        const st=t.status||'unknown',dc=st==='UP'?'up':st==='STALE'?'stale':'down';
+        if(st==='UP')up++;else if(st==='STALE')stale++;else down++;
+        rx+=t.rx_bytes||0;tx+=t.tx_bytes||0;
+        const cc=t.controller==='A'?'a':'b';
+        const hc=t.last_handshake_sec<0?'bad':t.last_handshake_sec>180?'warn':'good';
+        const pv=t.probe_rtt_ms!=null?`<span class="stat-val ${t.probe_rtt_ms>100?'warn':'good'}">${t.probe_rtt_ms}ms</span>`:'<span style="color:var(--dim)">--</span>';
+        return `<tr><td><span class="status-dot ${dc}"></span>${st}</td><td style="font-weight:600">${t.tunnel}</td><td>${t.uplink_label||t.uplink||'--'}</td><td><span class="ctrl-badge ${cc}">CTRL-${t.controller}</span></td><td style="font-size:8px">${t.endpoint||'--'}</td><td><span class="stat-val ${hc}">${t.last_handshake_display||'--'}</span></td><td>${t.rx_display||'--'}</td><td>${t.tx_display||'--'}</td><td>${pv}</td></tr>`;
+    }).join('');
+    document.getElementById('tun-up').textContent=up;
+    document.getElementById('tun-stale').textContent=stale;
+    document.getElementById('tun-down').textContent=down;
+    document.getElementById('tun-xfer').textContent=fmtB(rx+tx);
+
+    // Also update compact WG in left pane
+    updateWgCompact(T);
+}
+
+function updateWgCompact(T) {
+    const byUplink={};
+    T.forEach(t=>{
+        const ul=t.uplink_label||t.uplink||'?';
+        if(!byUplink[ul]) byUplink[ul]={up:0,total:0};
+        byUplink[ul].total++;
+        if(t.status==='UP') byUplink[ul].up++;
+    });
+    const totalUp=T.filter(t=>t.status==='UP').length;
+    document.getElementById('wg-summary').innerHTML=`<span>${totalUp}</span>/12 UP`;
+    document.getElementById('wg-rows').innerHTML=Object.entries(byUplink).map(([name,c])=>{
+        const cls=c.up===c.total?'up':c.up>0?'stale':'down';
+        return `<div class="wg-row"><span><span class="wg-dot ${cls}"></span>${name}</span><span style="color:var(--muted)">${c.up}/${c.total}</span></div>`;
+    }).join('');
+}
+
+async function runProbe() {
+    const btn=document.getElementById('probe-btn');
+    btn.textContent='⏳ Probing...';btn.disabled=true;
+    await fetchTunnels(true);
+    btn.textContent='⚡ PROBE ALL RTT';btn.disabled=false;
+}
+
+// ─── Map ───
+let map=null, mapMarker=null, mapDragging=false;
+try {
+    map = L.map('map',{zoomControl:false}).setView([30.267,-97.743],12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+        attribution:'© CartoDB', maxZoom:19
+    }).addTo(map);
+    mapMarker = L.circleMarker([30.267,-97.743],{radius:6,fillColor:'#00d4ff',color:'#00d4ff',weight:2,fillOpacity:0.8}).addTo(map);
+    map.on('dragstart',()=>{mapDragging=true});
+    map.on('dragend',()=>{setTimeout(()=>{mapDragging=false},5000)});
+} catch(e) { console.log('Map init skipped'); }
+
+// ─── Initial loads ───
+addLogEntry('info','Guardian UI connected',null,false);
+fetch('/api/status').then(r=>r.json()).then(updateDashboard).catch(()=>{});
+
+// Periodic WG compact refresh
+setInterval(()=>fetchTunnels(false),30000);
+fetchTunnels(false);
+
+// Load event history
+async function loadEventHistory(){
+    try{
+        const r=await fetch('/api/events/history?limit=50');
+        const events=await r.json();
+        events.reverse().forEach(e=>{
+            const ts=e.timestamp?e.timestamp.split(' ')[1]||e.timestamp.substring(11,19):'';
+            eventLog.push({time:ts,level:e.type,msg:e.message,gps:e.detail||null,timestamp:new Date(e.timestamp)});
         });
         renderLog();
-    } catch(err) { console.log("Could not load event history:", err); }
+    }catch(e){}
+}
+loadEventHistory();
+
+// ─── Chaos Float (preserved from original) ───
+function chaosFloat() {
+    if(document.getElementById('chaos-float')){document.getElementById('chaos-float').remove();return;}
+    let w=document.createElement('div');
+    w.id='chaos-float';
+    w.style.cssText='position:fixed;top:60px;right:20px;width:340px;background:var(--panel);border:2px solid var(--orange);border-radius:8px;z-index:9998;box-shadow:0 0 30px rgba(255,102,0,.2);padding:12px';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="color:var(--orange);font-weight:bold;font-size:12px">🎲 Chaos Injection</span>
+        <button onclick="document.getElementById('chaos-float').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;font-family:inherit">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Inject latency/loss into uplink scoring. Does NOT affect real packets.</div>
+    <div id="chaos-controls"></div>
+    <div style="margin-top:8px;display:flex;gap:6px">
+        <button onclick="chaosApply()" style="flex:1;background:var(--orange);color:#000;border:none;padding:6px;font-family:inherit;font-size:10px;cursor:pointer;border-radius:3px;font-weight:bold">APPLY</button>
+        <button onclick="chaosReset()" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--border);padding:6px;font-family:inherit;font-size:10px;cursor:pointer;border-radius:3px">RESET</button>
+    </div>`;
+    document.body.appendChild(w);
+    // Build per-uplink controls
+    fetch('/api/status').then(r=>r.json()).then(s=>{
+        const ctrl=document.getElementById('chaos-controls');
+        ctrl.innerHTML=(s.uplinks||[]).map(u=>`<div style="margin-bottom:6px;padding:6px;background:var(--card);border-radius:3px">
+            <div style="font-weight:bold;font-size:10px;margin-bottom:4px">${UPLINK_LABELS[u.name]||u.name}</div>
+            <div style="display:flex;gap:6px;align-items:center;font-size:9px">
+                <label>RTT+<input type="number" id="chaos-rtt-${u.name}" value="0" min="0" max="5000" step="10" style="width:50px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:2px;font-size:9px;font-family:inherit;border-radius:2px">ms</label>
+                <label>Loss+<input type="number" id="chaos-loss-${u.name}" value="0" min="0" max="100" step="5" style="width:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:2px;font-size:9px;font-family:inherit;border-radius:2px">%</label>
+            </div>
+        </div>`).join('');
+    });
 }
 
-/* Load event history on page load */
-loadEventHistory();
-// LLM Floating Window
-var llmCostPerToken = 0.002; // $/token - adjustable
-var llmSavedDollars = 0;
-var llmFailoverCount = 0;
+async function chaosApply() {
+    const s=await(await fetch('/api/status')).json();
+    const chaos={};
+    (s.uplinks||[]).forEach(u=>{
+        const rtt=parseInt(document.getElementById('chaos-rtt-'+u.name)?.value||0);
+        const loss=parseInt(document.getElementById('chaos-loss-'+u.name)?.value||0);
+        if(rtt>0||loss>0) chaos[u.name]={rtt_add:rtt,loss_add:loss};
+    });
+    await fetch('/api/chaos/inject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(chaos)});
+    addLogEntry('warn','Chaos injected: '+JSON.stringify(chaos));
+}
+
+async function chaosReset() {
+    await fetch('/api/chaos/reset',{method:'POST'});
+    addLogEntry('info','Chaos reset');
+}
+
+// ─── LLM Float (preserved from original) ───
 function llmFloat() {
-    if(document.getElementById("llm-float")) { document.getElementById("llm-float").remove(); return; }
-    let w = document.createElement("div");
-    w.id = "llm-float";
-    w.style.cssText = "position:fixed;bottom:20px;right:20px;width:650px;height:70vh;background:var(--panel);border:2px solid var(--blue);border-radius:8px;z-index:9998;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,212,255,0.2);resize:both;overflow:hidden";
-    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="llmDrag(event)">
+    if(document.getElementById('llm-float')){document.getElementById('llm-float').remove();return;}
+    let w=document.createElement('div');
+    w.id='llm-float';
+    w.style.cssText='position:fixed;bottom:20px;right:20px;width:650px;height:70vh;background:var(--panel);border:2px solid var(--blue);border-radius:8px;z-index:9998;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,212,255,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="llmDrag(event)">
         <span style="color:var(--blue);font-size:12px;font-weight:bold">⚡ PathSteer LLM Lab</span>
-        <div><span id="llm-fl-status" style="font-size:10px;color:var(--muted);margin-right:8px">Stopped</span><button onclick="document.getElementById(\x27llm-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+        <div><span id="llm-fl-status" style="font-size:10px;color:var(--muted);margin-right:8px">Stopped</span><button onclick="document.getElementById('llm-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
     </div>
     <div style="padding:8px 12px;flex-shrink:0">
-        <textarea id="llm-fl-prompt" rows="2" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;font-size:12px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById("llm-prompt").value}</textarea>
+        <textarea id="llm-fl-prompt" rows="2" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;font-size:12px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById('llm-prompt').value}</textarea>
         <div style="display:flex;gap:6px;margin-top:6px">
             <select id="llm-fl-loops" style="background:var(--card);color:var(--text);border:1px solid var(--border);font-size:11px;font-family:inherit;padding:5px;border-radius:4px">
-                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5 loops</option><option value="10">10</option><option value="50">50</option><option value="100">100</option>
+                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5</option><option value="10">10</option><option value="50">50</option>
             </select>
             <button onclick="llmFlStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:6px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">▶ START</button>
-            <button onclick="llmStop();document.getElementById(\x27llm-fl-status\x27).textContent=\x27Stopped\x27" style="background:var(--red);color:white;border:none;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■</button>
+            <button onclick="llmStop()" style="background:var(--red);color:white;border:none;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■</button>
         </div>
         <div style="display:flex;gap:10px;margin-top:8px;font-size:10px;flex-wrap:wrap">
             <div>⚡ <span id="llm-fl-tps" style="color:var(--blue);font-weight:bold">0</span> tok/s</div>
             <div>📊 <span id="llm-fl-total" style="color:var(--green);font-weight:bold">0</span> tokens</div>
             <div>🔄 <span id="llm-fl-reqs" style="color:var(--text)">0</span> reqs</div>
             <div>❌ <span id="llm-fl-errs" style="color:var(--red)">0</span></div>
-            <div>💰 $<span id="llm-fl-cost" style="color:var(--yellow);font-weight:bold">0.00</span> value</div>
-            <div>🛡️ $<span id="llm-fl-saved" style="color:var(--green);font-weight:bold">0.00</span> saved by failover</div>
+            <div>💰 $<span id="llm-fl-cost" style="color:var(--yellow);font-weight:bold">0.00</span></div>
+            <div>🛡️ $<span id="llm-fl-saved" style="color:var(--green);font-weight:bold">0.00</span> saved</div>
         </div>
-        <div style="margin-top:4px;font-size:9px;color:var(--muted)">Cost/token: $<input id="llm-fl-cpt" type="number" step="0.001" value="0.002" style="width:60px;background:var(--bg);color:var(--yellow);border:1px solid var(--border);font-size:9px;font-family:inherit;padding:2px;border-radius:2px" onchange="llmCostPerToken=parseFloat(this.value)"></div>
     </div>
-    <div style="flex:1;overflow-y:auto;margin:0 12px 12px;min-height:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;line-height:1.7;color:var(--text)" id="llm-fl-output">Waiting for output...</div>`;
+    <div style="flex:1;overflow-y:auto;margin:0 12px 12px;min-height:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;line-height:1.7" id="llm-fl-output">Waiting...</div>`;
     document.body.appendChild(w);
     llmFlPoll();
 }
 var llmDragEl=null,llmDragX=0,llmDragY=0;
-function llmDrag(e){llmDragEl=document.getElementById("llm-float");llmDragX=e.clientX-llmDragEl.offsetLeft;llmDragY=e.clientY-llmDragEl.offsetTop;document.onmousemove=function(e){llmDragEl.style.left=(e.clientX-llmDragX)+"px";llmDragEl.style.top=(e.clientY-llmDragY)+"px";llmDragEl.style.right="auto";llmDragEl.style.bottom="auto"};document.onmouseup=function(){document.onmousemove=null}}
-async function llmFlStart() {
-    const prompt = document.getElementById("llm-fl-prompt").value;
-    const loops = parseInt(document.getElementById("llm-fl-loops").value);
-    document.getElementById("llm-prompt").value = prompt;
-    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
-}
-function llmFlPoll() {
-    if(!document.getElementById("llm-float")) return;
-    fetch("/api/llm/status").then(r=>r.json()).then(d=>{
-        let el;
-        el=document.getElementById("llm-fl-tps"); if(el) el.textContent=d.tokens_per_sec||0;
-        el=document.getElementById("llm-fl-total"); if(el) el.textContent=d.total_tokens||0;
-        el=document.getElementById("llm-fl-reqs"); if(el) el.textContent=d.total_requests||0;
-        el=document.getElementById("llm-fl-errs"); if(el) el.textContent=d.errors||0;
-        el=document.getElementById("llm-fl-output"); if(el && d.full_log) { el.textContent=d.full_log; el.scrollTop=el.scrollHeight; }
-        el=document.getElementById("llm-fl-status"); if(el) { el.textContent=d.running?"⚡ Running":"Stopped"; el.style.color=d.running?"var(--green)":"var(--muted)"; }
-        let cost=(d.total_tokens||0)*llmCostPerToken;
-        el=document.getElementById("llm-fl-cost"); if(el) el.textContent=cost.toFixed(4);
-        el=document.getElementById("llm-fl-saved"); if(el) el.textContent=llmSavedDollars.toFixed(4);
-    }).catch(e=>{});
-    setTimeout(llmFlPoll, 500);
-}
-// LLM Popup Modal
-function llmPopup() {
-    let d = document.createElement("div");
-    d.id = "llm-modal";
-    d.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center";
-    d.innerHTML = `<div style="background:var(--panel);border:1px solid var(--blue);border-radius:8px;width:600px;max-height:80vh;padding:16px;font-family:inherit">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h3 style="color:var(--blue);font-size:14px">⚡ PathSteer LLM Lab</h3>
-            <button onclick="document.getElementById(\x27llm-modal\x27).remove()" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;font-family:inherit">✕</button>
-        </div>
-        <div style="margin-bottom:10px">
-            <label style="color:var(--muted);font-size:10px">PROMPT</label>
-            <textarea id="llm-pop-prompt" rows="3" style="width:100%;background:var(--card);color:var(--text);border:1px solid var(--border);padding:8px;font-size:11px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById("llm-prompt").value}</textarea>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-            <select id="llm-pop-loops" style="background:var(--card);color:var(--text);border:1px solid var(--border);font-size:11px;font-family:inherit;padding:6px;border-radius:4px">
-                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5 loops</option><option value="10">10 loops</option><option value="50">50 loops</option>
-            </select>
-            <button onclick="llmPopStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:8px;font-size:12px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">▶ START</button>
-            <button onclick="llmStop()" style="flex:1;background:var(--red);color:white;border:none;padding:8px;font-size:12px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■ STOP</button>
-        </div>
-        <div style="display:flex;gap:12px;margin-bottom:10px;font-size:11px">
-            <div>Tokens/s: <span id="llm-pop-tps" style="color:var(--blue);font-weight:bold">0</span></div>
-            <div>Total: <span id="llm-pop-total" style="color:var(--green);font-weight:bold">0</span></div>
-            <div>Requests: <span id="llm-pop-reqs" style="color:var(--text)">0</span></div>
-            <div>Errors: <span id="llm-pop-errs" style="color:var(--red)">0</span></div>
-            <div id="llm-pop-status" style="color:var(--muted)">Stopped</div>
-        </div>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;max-height:300px;overflow-y:auto;font-size:11px;line-height:1.6;color:var(--text)" id="llm-pop-output">Waiting for output...</div>
-    </div>`;
-    d.addEventListener("click", function(e) { if(e.target === d) d.remove(); });
-    document.body.appendChild(d);
-    llmPopPoll();
-}
-async function llmPopStart() {
-    const prompt = document.getElementById("llm-pop-prompt").value;
-    const loops = parseInt(document.getElementById("llm-pop-loops").value);
-    document.getElementById("llm-prompt").value = prompt;
-    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
-}
-function llmPopPoll() {
-    if(!document.getElementById("llm-modal")) return;
-    fetch("/api/llm/status").then(r=>r.json()).then(d=>{
-        let el = document.getElementById("llm-pop-tps"); if(el) el.textContent = d.tokens_per_sec||0;
-        el = document.getElementById("llm-pop-total"); if(el) el.textContent = d.total_tokens||0;
-        el = document.getElementById("llm-pop-reqs"); if(el) el.textContent = d.total_requests||0;
-        el = document.getElementById("llm-pop-errs"); if(el) el.textContent = d.errors||0;
-        el = document.getElementById("llm-pop-output"); if(el && d.last_response) el.textContent = d.last_response;
-        el = document.getElementById("llm-pop-status"); if(el) { el.textContent = d.running?"⚡ Running":"Stopped"; el.style.color = d.running?"var(--green)":"var(--muted)"; }
-    }).catch(e=>{});
-    setTimeout(llmPopPoll, 500);
-}
-// LLM Test Functions
-async function llmStart() {
-    const prompt = document.getElementById("llm-prompt").value;
-    const loops = parseInt(document.getElementById("llm-loops").value);
-    await fetch("/api/llm/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({prompt:prompt, loop_count:loops})});
-    document.getElementById("target-llm").textContent = "Running";
-    document.getElementById("target-llm").style.color = "var(--green)";
-}
-async function llmStop() {
-    await fetch("/api/llm/stop", {method:"POST"});
-    document.getElementById("target-llm").textContent = "Stopped";
-    document.getElementById("target-llm").style.color = "var(--muted)";
-}
-async function llmPoll() {
-    try {
-        const r = await fetch("/api/llm/status");
-        const d = await r.json();
-        document.getElementById("llm-tps").textContent = d.tokens_per_sec || 0;
-        document.getElementById("llm-total").textContent = d.total_tokens || 0;
-        document.getElementById("llm-reqs").textContent = d.total_requests || 0;
-        document.getElementById("llm-errs").textContent = d.errors || 0;
-        if(d.last_response) document.getElementById("llm-response").textContent = d.last_response;
-        if(d.running) { document.getElementById("target-llm").textContent = "Running"; document.getElementById("target-llm").style.color = "var(--green)"; }
-        else { document.getElementById("target-llm").textContent = "Stopped"; document.getElementById("target-llm").style.color = "var(--muted)"; }
-    } catch(e) {}
-}
-setInterval(llmPoll, 1000);
-// Flow Monitor
-async function flowPoll() {
-    try {
-        const r = await fetch("/api/flows");
-        const d = await r.json();
-        let el = document.getElementById("flow-count"); if(el) el.textContent = d.active_flows||0;
-        el = document.getElementById("sip-count"); if(el) el.textContent = d.active_sip_calls||0;
-        el = document.getElementById("flow-failovers"); if(el) el.textContent = d.failover_count||0;
-        if(document.getElementById("flow-float")) flowUpdateTable(d);
-    } catch(e) {}
-}
-setInterval(flowPoll, 2000);
-// Log History Floating Viewer
-function logFloat() {
-    if(document.getElementById("log-float")) { document.getElementById("log-float").remove(); return; }
-    let now = new Date();
-    let hr = new Date(now - 3600000);
-    let fmtDT = d => d.toISOString().slice(0,16);
-    let w = document.createElement("div");
-    w.id = "log-float";
-    w.style.cssText = "position:fixed;top:80px;left:300px;width:750px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9996;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,0.2);resize:both;overflow:hidden";
-    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="logDrag(event)">
-        <span style="color:var(--purple);font-size:12px;font-weight:bold">📋 Event History</span>
-        <div><span id="log-fl-count" style="font-size:10px;color:var(--muted);margin-right:8px"></span><button onclick="document.getElementById(\x27log-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
-    </div>
-    <div style="display:flex;gap:6px;padding:8px 12px;align-items:center;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <span style="font-size:9px;color:var(--muted)">From:</span>
-        <input type="datetime-local" id="log-fl-start" value="${fmtDT(hr)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
-        <span style="font-size:9px;color:var(--muted)">To:</span>
-        <input type="datetime-local" id="log-fl-end" value="${fmtDT(now)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
-        <button onclick="logFlLoad()" style="background:var(--blue);color:var(--bg);border:none;padding:4px 12px;font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;font-weight:bold">LOAD</button>
-        <select id="log-fl-type" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
-            <option value="all">All</option><option value="switch">Switches</option><option value="trigger">Triggers</option><option value="error">Errors</option><option value="info">Info</option>
-        </select>
-        <button onclick="logFlLoad(\x27last1h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">1H</button>
-        <button onclick="logFlLoad(\x27last6h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">6H</button>
-        <button onclick="logFlLoad(\x27last24h\x27)" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">24H</button>
-    </div>
-    <div id="log-fl-content" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:10px;font-family:inherit;min-height:0"></div>`;
-    document.body.appendChild(w);
-    logFlLoad();
-}
-var logDragEl=null,logDragX=0,logDragY=0;
-function logDrag(e){logDragEl=document.getElementById("log-float");logDragX=e.clientX-logDragEl.offsetLeft;logDragY=e.clientY-logDragEl.offsetTop;document.onmousemove=function(e){logDragEl.style.left=(e.clientX-logDragX)+"px";logDragEl.style.top=(e.clientY-logDragY)+"px"};document.onmouseup=function(){document.onmousemove=null}}
+function llmDrag(e){llmDragEl=document.getElementById('llm-float');llmDragX=e.clientX-llmDragEl.offsetLeft;llmDragY=e.clientY-llmDragEl.offsetTop;document.onmousemove=function(e){llmDragEl.style.left=(e.clientX-llmDragX)+'px';llmDragEl.style.top=(e.clientY-llmDragY)+'px';llmDragEl.style.right='auto';llmDragEl.style.bottom='auto'};document.onmouseup=function(){document.onmousemove=null}}
+async function llmFlStart(){const p=document.getElementById('llm-fl-prompt').value;const l=parseInt(document.getElementById('llm-fl-loops').value);document.getElementById('llm-prompt').value=p;await fetch('/api/llm/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p,loop_count:l})})}
+function llmFlPoll(){if(!document.getElementById('llm-float'))return;fetch('/api/llm/status').then(r=>r.json()).then(d=>{let el;el=document.getElementById('llm-fl-tps');if(el)el.textContent=d.tokens_per_sec||0;el=document.getElementById('llm-fl-total');if(el)el.textContent=d.total_tokens||0;el=document.getElementById('llm-fl-reqs');if(el)el.textContent=d.total_requests||0;el=document.getElementById('llm-fl-errs');if(el)el.textContent=d.errors||0;el=document.getElementById('llm-fl-output');if(el&&d.full_log){el.textContent=d.full_log;el.scrollTop=el.scrollHeight}el=document.getElementById('llm-fl-status');if(el){el.textContent=d.running?'⚡ Running':'Stopped';el.style.color=d.running?'var(--green)':'var(--muted)'}let cost=(d.total_tokens||0)*llmCostPerToken;el=document.getElementById('llm-fl-cost');if(el)el.textContent=cost.toFixed(4);el=document.getElementById('llm-fl-saved');if(el)el.textContent=llmSavedDollars.toFixed(4)}).catch(()=>{});setTimeout(llmFlPoll,500)}
+async function llmStop(){await fetch('/api/llm/stop',{method:'POST'})}
 
-async function logFlLoad(preset) {
-    let start = document.getElementById("log-fl-start").value;
-    let end = document.getElementById("log-fl-end").value;
-    let etype = document.getElementById("log-fl-type").value;
-    if(preset) {
-        let now = new Date();
-        end = now.toISOString();
-        let ms = preset==="last1h"?3600000:preset==="last6h"?21600000:86400000;
-        start = new Date(now-ms).toISOString();
-    } else {
-        start = start ? new Date(start).toISOString() : "";
-        end = end ? new Date(end).toISOString() : "";
-    }
-    try {
-        const r = await fetch(`/api/log/query?start=${start}&end=${end}&type=${etype}&limit=500`);
-        const d = await r.json();
-        let el = document.getElementById("log-fl-count");
-        if(el) el.textContent = (d.events||[]).length + " events";
-        let content = document.getElementById("log-fl-content");
-        if(content) {
-            if(!d.events || d.events.length === 0) {
-                content.innerHTML = "<div style=\x27color:var(--muted);padding:20px;text-align:center\x27>No events in range</div>";
-                return;
-            }
-            let html = "";
-            d.events.forEach(e => {
-                let color = e.type==="switch"?"var(--yellow)":e.type==="trigger"?"var(--red)":e.type==="error"?"var(--red)":"var(--muted)";
-                let time = e.server_time ? e.server_time.replace("T"," ").slice(0,19) : "?";
-                html += `<div style="padding:3px 0;border-bottom:1px solid var(--border);display:flex;gap:8px">`;
-                html += `<span style="color:var(--muted);min-width:140px;flex-shrink:0">${time}</span>`;
-                html += `<span style="color:${color};min-width:60px;font-weight:bold;flex-shrink:0">${(e.type||"info").toUpperCase()}</span>`;
-                html += `<span style="color:var(--text)">${e.message||""}</span>`;
-                html += `</div>`;
-            });
-            content.innerHTML = html;
-            content.scrollTop = content.scrollHeight;
-        }
-    } catch(e) { console.error(e); }
-}
-// Log History Floating Viewer
-
-function flowFloat() {
-    if(document.getElementById("flow-float")) { document.getElementById("flow-float").remove(); return; }
-    let w = document.createElement("div");
-    w.id = "flow-float";
-    w.style.cssText = "position:fixed;top:60px;left:280px;width:700px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9997;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,0.2);resize:both;overflow:hidden";
-    w.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="flowDrag(event)">
-        <span style="color:var(--purple);font-size:12px;font-weight:bold">📡 PathSteer Flow Monitor</span>
-        <div><span id="flow-fl-count" style="font-size:10px;color:var(--green);margin-right:8px">0 flows</span><button onclick="document.getElementById(\x27flow-float\x27).remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
-    </div>
-    <div style="display:flex;gap:12px;padding:6px 12px;font-size:10px;background:var(--card)">
-        <div>Active: <span id="flow-fl-active" style="color:var(--green);font-weight:bold">0</span></div>
-        <div>SIP Calls: <span id="flow-fl-sip" style="color:var(--blue);font-weight:bold">0</span></div>
-        <div>Registrations: <span id="flow-fl-regs" style="color:var(--text)">0</span></div>
-        <div>🛡️ Failovers: <span id="flow-fl-fo" style="color:var(--yellow);font-weight:bold">0</span></div>
-    </div>
-    <div style="padding:4px 12px;font-size:9px;color:var(--muted);background:var(--card);border-bottom:1px solid var(--border)">
-        <div style="display:grid;grid-template-columns:70px 1fr 1fr 60px 60px 50px 50px;gap:4px;font-weight:bold">
-            <span>Service</span><span>Source</span><span>Destination</span><span>Packets</span><span>Bytes</span><span>Age</span><span>🛡️</span>
-        </div>
-    </div>
-    <div id="flow-fl-table" style="flex:1;overflow-y:auto;margin:0;padding:0 12px;font-size:9px"></div>
-    <div id="flow-fl-sip-panel" style="max-height:120px;overflow-y:auto;margin:0 12px 8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:10px">
-        <div style="color:var(--blue);font-weight:bold;margin-bottom:4px">SIP Calls</div>
-        <div id="flow-fl-sip-list" style="color:var(--muted)">No active calls</div>
-    </div>`;
+// ─── Flow Float (preserved from original) ───
+function flowFloat(){
+    if(document.getElementById('flow-float')){document.getElementById('flow-float').remove();return;}
+    let w=document.createElement('div');w.id='flow-float';
+    w.style.cssText='position:fixed;top:60px;left:280px;width:700px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9997;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="flowDrag(event)"><span style="color:var(--purple);font-size:12px;font-weight:bold">📡 Flow Monitor</span><button onclick="document.getElementById('flow-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    <div style="display:flex;gap:12px;padding:6px 12px;font-size:10px;background:var(--card)"><div>Active: <span id="flow-fl-active" style="color:var(--green);font-weight:bold">0</span></div><div>SIP: <span id="flow-fl-sip" style="color:var(--blue);font-weight:bold">0</span></div><div>🛡️ Failovers: <span id="flow-fl-fo" style="color:var(--yellow);font-weight:bold">0</span></div></div>
+    <div id="flow-fl-table" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:9px"></div>`;
     document.body.appendChild(w);
 }
 var flowDragEl=null,flowDragX=0,flowDragY=0;
-function flowDrag(e){flowDragEl=document.getElementById("flow-float");flowDragX=e.clientX-flowDragEl.offsetLeft;flowDragY=e.clientY-flowDragEl.offsetTop;document.onmousemove=function(e){flowDragEl.style.left=(e.clientX-flowDragX)+"px";flowDragEl.style.top=(e.clientY-flowDragY)+"px"};document.onmouseup=function(){document.onmousemove=null}}
+function flowDrag(e){flowDragEl=document.getElementById('flow-float');flowDragX=e.clientX-flowDragEl.offsetLeft;flowDragY=e.clientY-flowDragEl.offsetTop;document.onmousemove=function(e){flowDragEl.style.left=(e.clientX-flowDragX)+'px';flowDragEl.style.top=(e.clientY-flowDragY)+'px'};document.onmouseup=function(){document.onmousemove=null}}
+setInterval(()=>{fetch('/api/flows').then(r=>r.json()).then(d=>{if(document.getElementById('flow-float')){let el=document.getElementById('flow-fl-active');if(el)el.textContent=d.active_flows||0;el=document.getElementById('flow-fl-sip');if(el)el.textContent=d.active_sip_calls||0;el=document.getElementById('flow-fl-fo');if(el)el.textContent=d.failover_count||0}}).catch(()=>{})},2000);
 
-function flowUpdateTable(d) {
-    let el = document.getElementById("flow-fl-active"); if(el) el.textContent = d.active_flows||0;
-    el = document.getElementById("flow-fl-sip"); if(el) el.textContent = d.active_sip_calls||0;
-    el = document.getElementById("flow-fl-regs"); if(el) el.textContent = d.registrations||0;
-    el = document.getElementById("flow-fl-fo"); if(el) el.textContent = d.failover_count||0;
-    el = document.getElementById("flow-fl-count"); if(el) el.textContent = (d.active_flows||0) + " flows";
-    let tbl = document.getElementById("flow-fl-table");
-    if(tbl && d.flows) {
-        let html = "";
-        d.flows.forEach(f => {
-            let age = Math.round((d.updated - f.start));
-            let ageStr = age < 60 ? age+"s" : Math.floor(age/60)+"m";
-            let bytes = f.bytes > 1048576 ? (f.bytes/1048576).toFixed(1)+"M" : f.bytes > 1024 ? (f.bytes/1024).toFixed(0)+"K" : f.bytes;
-            let color = f.service.includes("SIP") ? "var(--blue)" : f.service.includes("RTP") ? "var(--green)" : f.service.includes("AWS") ? "var(--yellow)" : "var(--text)";
-            let foColor = f.failovers_survived > 0 ? "var(--green)" : "var(--muted)";
-            html += `<div style="display:grid;grid-template-columns:70px 1fr 1fr 60px 60px 50px 50px;gap:4px;padding:2px 0;border-bottom:1px solid var(--border)">`;
-            html += `<span style="color:${color}">${f.service}</span>`;
-            html += `<span>${f.src}</span><span>${f.dst}</span>`;
-            html += `<span>${f.packets}</span><span>${bytes}</span>`;
-            html += `<span>${ageStr}</span>`;
-            html += `<span style="color:${foColor};font-weight:bold">${f.failovers_survived}</span>`;
-            html += `</div>`;
-        });
-        tbl.innerHTML = html || "<div style=\x27color:var(--muted);padding:10px\x27>No active flows</div>";
-    }
-    let sipList = document.getElementById("flow-fl-sip-list");
-    if(sipList && d.sip_calls) {
-        let html = "";
-        d.sip_calls.forEach(c => {
-            let stateColor = c.state=="active" ? "var(--green)" : c.state=="ringing" ? "var(--yellow)" : "var(--red)";
-            html += `<div style="margin:2px 0"><span style="color:${stateColor}">[${c.state}]</span> ${c.calling} → ${c.called} <span style="color:var(--muted);font-size:8px">${c.call_id}</span>`;
-            if(c.failovers_survived > 0) html += ` <span style="color:var(--green)">🛡️${c.failovers_survived}</span>`;
-            html += `</div>`;
-        });
-        sipList.innerHTML = html || "<div style=\x27color:var(--muted)\x27>No active calls</div>";
-    }
+// ─── Log History Float (preserved from original) ───
+function logFloat(){
+    if(document.getElementById('log-float')){document.getElementById('log-float').remove();return;}
+    let now=new Date(),hr=new Date(now-3600000);
+    let fmtDT=d=>d.toISOString().slice(0,16);
+    let w=document.createElement('div');w.id='log-float';
+    w.style.cssText='position:fixed;top:80px;left:300px;width:750px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9996;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="logHistDrag(event)"><span style="color:var(--purple);font-size:12px;font-weight:bold">📋 Event History</span><button onclick="document.getElementById('log-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    <div style="display:flex;gap:6px;padding:8px 12px;align-items:center;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--muted)">From:</span><input type="datetime-local" id="log-fl-start" value="${fmtDT(hr)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <span style="font-size:9px;color:var(--muted)">To:</span><input type="datetime-local" id="log-fl-end" value="${fmtDT(now)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <button onclick="logFlLoad()" style="background:var(--blue);color:var(--bg);border:none;padding:4px 12px;font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;font-weight:bold">LOAD</button>
+        <button onclick="logFlLoad('last1h')" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">1H</button>
+        <button onclick="logFlLoad('last6h')" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">6H</button>
+    </div>
+    <div id="log-fl-content" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:10px"></div>`;
+    document.body.appendChild(w);
+    logFlLoad('last1h');
+}
+var logHistDragEl=null;
+function logHistDrag(e){logHistDragEl=document.getElementById('log-float');let dx=e.clientX-logHistDragEl.offsetLeft,dy=e.clientY-logHistDragEl.offsetTop;document.onmousemove=function(e){logHistDragEl.style.left=(e.clientX-dx)+'px';logHistDragEl.style.top=(e.clientY-dy)+'px'};document.onmouseup=function(){document.onmousemove=null}}
+async function logFlLoad(preset){
+    let start=document.getElementById('log-fl-start')?.value,end=document.getElementById('log-fl-end')?.value,etype='all';
+    if(preset){let now=new Date();end=now.toISOString();let ms=preset==='last1h'?3600000:preset==='last6h'?21600000:86400000;start=new Date(now-ms).toISOString();}else{start=start?new Date(start).toISOString():'';end=end?new Date(end).toISOString():'';}
+    try{const r=await fetch(`/api/log/query?start=${start}&end=${end}&type=${etype}&limit=500`);const d=await r.json();let c=document.getElementById('log-fl-content');if(c){if(!d.events||!d.events.length){c.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">No events</div>';return;}c.innerHTML=d.events.map(e=>{let color=e.type==='switch'?'var(--yellow)':e.type==='trigger'?'var(--red)':'var(--muted)';let time=e.server_time?e.server_time.replace('T',' ').slice(0,19):'?';return`<div style="padding:2px 0;border-bottom:1px solid var(--border);display:flex;gap:8px"><span style="color:var(--muted);min-width:130px">${time}</span><span style="color:${color};min-width:55px;font-weight:bold">${(e.type||'info').toUpperCase()}</span><span>${e.message||''}</span></div>`}).join('');c.scrollTop=c.scrollHeight;}}catch(e){console.error(e)}
 }
 </script>
 </body>
