@@ -779,7 +779,7 @@ static trigger_t tripwire_check(uplink_t* active) {
      * Check 4: Starlink Obstruction (if Starlink uplink)
      */
     if (active->type == UPLINK_TYPE_STARLINK) {
-        if (active->starlink.obstructed) {
+        if (active->starlink.obstruction_pct > 25.0) {
             return TRIGGER_STARLINK_OBSTR;
         }
         /* Also trigger if obstruction predicted within 5 seconds */

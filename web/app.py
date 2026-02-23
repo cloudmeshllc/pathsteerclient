@@ -70,8 +70,22 @@ def get_throughput():
         if iface.startswith("vip_"):
             fields = data.split()
             curr[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
-    total_rx = sum(v["rx"] for v in curr.values())
-    total_tx = sum(v["tx"] for v in curr.values())
+    # Only count the active vip veth (from daemon status)
+    active_dev = None
+    try:
+        import json as _j
+        with open('/run/pathsteer/status.json') as _sf:
+            _st = _j.load(_sf)
+            _aul = _st.get('active_uplink','')
+            _map = {'fa':'vip_fa','fb':'vip_fb','sl_a':'vip_sl_a','sl_b':'vip_sl_b','cell_a':'vip_cell_a','cell_b':'vip_cell_b'}
+            active_dev = _map.get(_aul)
+    except: pass
+    if active_dev and active_dev in curr:
+        total_rx = curr[active_dev]["rx"]
+        total_tx = curr[active_dev]["tx"]
+    else:
+        total_rx = sum(v["rx"] for v in curr.values())
+        total_tx = sum(v["tx"] for v in curr.values())
     dt = now - _prev_time if _prev_time > 0 else 1
     prev_rx = sum(v.get("rx", 0) for v in _prev_bytes.values())
     prev_tx = sum(v.get("tx", 0) for v in _prev_bytes.values())
@@ -329,12 +343,17 @@ def api_chaos_inject():
     """Inject chaos (RTT/jitter/loss) into an uplink"""
     global chaos_state
     data = request.get_json()
+    # Support both formats: {uplink:X,rtt:Y} and {ul_name:{rtt_add:Y}}
     uplink = data.get('uplink')
-    rtt = data.get('rtt', 0)
-    jitter = data.get('jitter', 0)
-    loss = data.get('loss', 0)
-    
-    chaos_state[uplink] = {'rtt': rtt, 'jitter': jitter, 'loss': loss}
+    if uplink:
+        rtt = data.get('rtt', 0)
+        jitter = data.get('jitter', 0)
+        loss = data.get('loss', 0)
+        chaos_state[uplink] = {'rtt': rtt, 'jitter': jitter, 'loss': loss}
+    else:
+        for ul, vals in data.items():
+            if isinstance(vals, dict):
+                chaos_state[ul] = {'rtt': vals.get('rtt_add', vals.get('rtt', 0)), 'jitter': vals.get('jitter', 0), 'loss': vals.get('loss_add', vals.get('loss', 0))}
     
     # Write to file for daemon to read
     chaos_file = '/run/pathsteer/chaos.json'

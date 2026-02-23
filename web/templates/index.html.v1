@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PathSteer Guardian</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+    --bg:#0a0a0f;--panel:#12121a;--card:#1a1a2e;--border:#2a2a4e;
+    --text:#e0e0e0;--muted:#666;--dim:#444;
+    --blue:#00d4ff;--purple:#7b2cbf;--green:#00ff88;
+    --yellow:#ffaa00;--orange:#ff6600;--red:#ff4444;
+    --sl-blue:#1DA1F2;--tmo-magenta:#E20074;--att-blue:#00A8E0;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg);color:var(--text);font-size:11px;overflow:hidden}
+
+/* ═══ GRID LAYOUT ═══ */
+.dashboard{
+    display:grid;
+    grid-template-columns:250px 1fr 260px;
+    grid-template-rows:44px 1fr;
+    height:100vh;gap:1px;background:var(--border);
+}
+
+/* ═══ HEADER ═══ */
+.header{
+    grid-column:1/-1;background:linear-gradient(90deg,var(--panel),#1a1a30);
+    display:flex;justify-content:space-between;align-items:center;padding:0 14px;
+}
+.logo{display:flex;align-items:center;gap:8px}
+.logo h1{font-size:13px;font-weight:700;letter-spacing:2px}
+.logo .g{color:var(--blue)}
+.hdr-center{display:flex;align-items:center;gap:10px}
+.badge{padding:4px 10px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.mode-training{background:rgba(0,212,255,0.15);color:var(--blue);border:1px solid var(--blue)}
+.mode-tripwire{background:rgba(255,170,0,0.15);color:var(--yellow);border:1px solid var(--yellow)}
+.mode-mirror{background:rgba(0,255,136,0.15);color:var(--green);border:1px solid var(--green)}
+.st-normal{background:rgba(0,255,136,0.08);color:var(--green)}
+.st-prepare{background:rgba(255,170,0,0.1);color:var(--yellow);animation:pulse 1.5s infinite}
+.st-protect{background:rgba(255,102,0,0.12);color:var(--orange);animation:pulse .8s infinite}
+.st-switching{background:rgba(255,68,68,0.12);color:var(--red);animation:pulse .5s infinite}
+.st-holding{background:rgba(123,44,191,0.12);color:var(--purple)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+.speed-display{font-size:20px;font-weight:700;color:var(--blue);display:flex;align-items:baseline;gap:3px}
+.speed-display .unit{font-size:10px;color:var(--muted)}
+
+.hdr-right{display:flex;gap:6px;align-items:center}
+.hdr-btn{padding:4px 10px;background:var(--card);border:1px solid var(--border);color:var(--text);
+    font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px;text-decoration:none}
+.hdr-btn:hover{border-color:var(--blue);color:var(--blue)}
+.hdr-btn.accent{border-color:var(--orange);color:var(--orange)}
+.hdr-btn.accent:hover{background:var(--orange);color:#000}
+
+/* ═══ LEFT PANE — UPLINKS ═══ */
+.left-pane{background:var(--panel);overflow-y:auto;display:flex;flex-direction:column}
+.pane-title{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);
+    padding:8px 10px 4px;border-bottom:1px solid var(--border)}
+.uplinks-list{flex:1;overflow-y:auto;padding:6px 8px}
+
+/* Uplink Cards */
+.uplink-card{background:var(--card);border-radius:4px;padding:7px 8px;margin-bottom:5px;
+    border:2px solid var(--border);position:relative;transition:all .2s;cursor:default}
+.uplink-card.active{border-color:var(--green);box-shadow:0 0 10px rgba(0,255,136,.15)}
+.uplink-card.active::after{content:'● ACTIVE';position:absolute;top:5px;right:7px;
+    font-size:7px;color:var(--green);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.uplink-card.unavailable{opacity:.35}
+.uplink-card.disabled-uplink{opacity:.4}
+.uplink-card.lte{border-left:3px solid var(--tmo-magenta)}
+.uplink-card.lte.att{border-left-color:var(--att-blue)}
+.uplink-card.starlink{border-left:3px solid var(--sl-blue)}
+.uplink-card.fiber{border-left:3px solid var(--green)}
+
+.uplink-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.uplink-name{font-weight:700;font-size:10px}
+.uplink-type{font-size:8px;color:var(--muted)}
+.uplink-toggle{width:28px;height:14px;border-radius:7px;background:var(--border);cursor:pointer;
+    position:relative;transition:background .2s}
+.uplink-toggle.enabled{background:var(--green)}
+.uplink-toggle::after{content:'';position:absolute;top:2px;left:2px;width:10px;height:10px;
+    border-radius:50%;background:var(--text);transition:left .2s}
+.uplink-toggle.enabled::after{left:16px}
+
+.metrics-row{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.m-cell{background:var(--bg);padding:3px;border-radius:2px;text-align:center}
+.m-lbl{font-size:7px;color:var(--muted);text-transform:uppercase}
+.m-val{font-size:10px;font-weight:600;color:var(--blue)}
+.m-val.good{color:var(--green)}.m-val.warn{color:var(--yellow)}.m-val.bad{color:var(--red)}.m-val.na{color:var(--dim)}
+
+/* Risk bar */
+.risk-wrap{display:flex;align-items:center;gap:5px;margin-top:3px}
+.risk-bar{flex:1;height:5px;background:var(--bg);border-radius:3px;overflow:hidden}
+.risk-fill{height:100%;border-radius:3px;transition:width .4s}
+.risk-lbl{font-size:8px;font-weight:600;min-width:28px;text-align:right}
+
+/* Prediction badges on cards */
+.pred-badge{position:absolute;top:5px;right:50px;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;z-index:5}
+.pred-badge.next{background:var(--yellow);color:#000}
+.pred-badge.second{background:#555;color:#ccc}
+.pred-badge.third{background:#333;color:#999}
+
+/* ─── Compact WG Section at bottom of left pane ─── */
+.wg-compact{padding:6px 8px;border-top:1px solid var(--border)}
+.wg-compact .pane-title{padding:0 0 4px;border-bottom:none}
+.wg-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:9px}
+.wg-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+.wg-dot.up{background:var(--green)}.wg-dot.stale{background:var(--yellow)}.wg-dot.down{background:var(--red)}
+.wg-summary{display:flex;gap:10px;font-size:9px;color:var(--muted);padding:4px 0 2px}
+.wg-summary span{color:var(--blue);font-weight:600}
+
+/* ═══ MAIN AREA ═══ */
+.main-area{background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
+
+/* View Tabs */
+.view-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);flex-shrink:0}
+.vtab{padding:8px 16px;background:none;border:none;color:var(--muted);font-size:10px;font-weight:600;
+    font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px;
+    border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.vtab:hover{color:var(--text)}
+.vtab.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+.view-content{flex:1;overflow-y:auto;padding:10px}
+.view-panel{display:none}
+.view-panel.active{display:block}
+
+/* ─── STATUS VIEW ─── */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px;text-align:center}
+.kpi .val{font-size:22px;font-weight:700;color:var(--blue)}
+.kpi .lbl{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:2px}
+.kpi .sub{font-size:9px;color:var(--muted);margin-top:1px}
+
+.active-path-banner{
+    background:linear-gradient(135deg,rgba(0,255,136,.04),rgba(0,212,255,.04));
+    border:1px solid var(--green);border-radius:5px;padding:10px 14px;margin-bottom:12px;
+    display:flex;justify-content:space-between;align-items:center}
+.active-path-banner .path-name{font-size:15px;font-weight:700;color:var(--green)}
+.active-path-banner .path-info{display:flex;align-items:center;gap:10px}
+.active-path-banner .path-detail{font-size:9px;color:var(--muted)}
+.active-path-banner.warn{border-color:var(--yellow);background:linear-gradient(135deg,rgba(255,170,0,.04),rgba(255,102,0,.04))}
+.badge-sm{display:inline-block;padding:2px 6px;border-radius:2px;font-size:8px;font-weight:600}
+.badge-sm.good{background:rgba(0,255,136,.12);color:var(--green)}
+.badge-sm.warn{background:rgba(255,170,0,.12);color:var(--yellow)}
+.badge-sm.bad{background:rgba(255,68,68,.12);color:var(--red)}
+
+/* Throughput bars */
+.tp-section{margin-bottom:12px}
+.tp-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tp-label{font-size:9px;color:var(--muted);min-width:30px;text-align:right}
+.tp-bar{flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.tp-fill{height:100%;border-radius:5px;transition:width .5s ease}
+.tp-fill.down{background:linear-gradient(90deg,var(--blue),var(--green))}
+.tp-fill.up{background:linear-gradient(90deg,var(--purple),var(--blue))}
+.tp-val{font-size:10px;font-weight:600;color:var(--blue);min-width:65px}
+
+/* Prediction */
+.pred-section{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px;margin-bottom:12px}
+.pred-section h3{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px}
+.pred-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.pred-item{text-align:center}
+.pred-item .rank{font-size:8px;color:var(--muted);text-transform:uppercase}
+.pred-item .name{font-size:11px;font-weight:700;color:var(--blue)}
+.pred-item .name.active-pred{color:var(--green)}
+
+/* Map placeholder */
+.map-container{height:250px;background:var(--bg);border:1px solid var(--border);border-radius:5px;
+    margin-bottom:12px;position:relative;overflow:hidden}
+#map{width:100%;height:100%;border-radius:5px}
+.map-overlay{position:absolute;top:8px;left:8px;z-index:500;background:rgba(10,10,15,.85);
+    padding:5px 10px;border-radius:3px;font-size:9px;color:var(--muted)}
+.map-speed{position:absolute;top:8px;right:8px;z-index:500;background:rgba(10,10,15,.85);
+    padding:4px 10px;border-radius:3px;font-size:14px;font-weight:700;color:var(--blue)}
+
+/* ─── DIAGNOSTICS VIEW ─── */
+.diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.diag-card{background:var(--card);border:1px solid var(--border);border-radius:5px;padding:10px}
+.diag-card h3{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px}
+.stat-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(42,42,78,.25)}
+.stat-row:last-child{border-bottom:none}
+.stat-lbl{color:var(--muted)}.stat-val{font-weight:600;color:var(--blue)}
+.stat-val.good{color:var(--green)}.stat-val.warn{color:var(--yellow)}.stat-val.bad{color:var(--red)}
+.big-num{text-align:center;padding:8px 0}
+.big-num .v{font-size:28px;font-weight:700;color:var(--blue)}
+.big-num .l{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:2px}
+
+/* Namespace cards */
+.ns-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px;margin-top:8px}
+.ns-card{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:6px;font-size:9px}
+.ns-card.healthy{border-left:2px solid var(--green)}
+.ns-card.unhealthy{border-left:2px solid var(--red)}
+.ns-card .ns-name{font-weight:700;margin-bottom:3px}
+.ns-card .ns-det{color:var(--muted);line-height:1.5}
+
+/* ─── WG TUNNELS VIEW ─── */
+.tun-table{width:100%;border-collapse:collapse;font-size:9px}
+.tun-table th{text-align:left;padding:6px 8px;background:var(--bg);color:var(--muted);font-size:8px;
+    text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid var(--border)}
+.tun-table td{padding:6px 8px;border-bottom:1px solid var(--border)}
+.tun-table tr:hover{background:rgba(0,212,255,.02)}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px}
+.status-dot.up{background:var(--green);box-shadow:0 0 4px var(--green)}
+.status-dot.stale{background:var(--yellow);box-shadow:0 0 4px var(--yellow)}
+.status-dot.down{background:var(--red);box-shadow:0 0 4px var(--red)}
+.ctrl-badge{display:inline-block;padding:1px 6px;border-radius:2px;font-size:8px;font-weight:600}
+.ctrl-badge.a{background:rgba(0,212,255,.12);color:var(--blue)}
+.ctrl-badge.b{background:rgba(123,44,191,.12);color:var(--purple)}
+.tun-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.tun-summary .kpi .val{font-size:20px}
+
+/* ═══ RIGHT PANE — EVENT LOG ═══ */
+.right-pane{background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
+.log-controls{display:flex;gap:3px;padding:6px 8px;flex-wrap:wrap}
+.log-btn{padding:3px 8px;background:var(--card);border:1px solid var(--border);color:var(--muted);
+    font-size:8px;font-family:inherit;cursor:pointer;border-radius:2px}
+.log-btn:hover{color:var(--text)}.log-btn.active{color:var(--blue);border-color:var(--blue)}
+.log-content{flex:1;overflow-y:auto;padding:0 8px 8px}
+.log-entry{padding:3px 0;border-bottom:1px solid rgba(42,42,78,.2);font-size:9px;line-height:1.4}
+.log-time{color:var(--dim);margin-right:4px;font-size:8px}
+.log-level{font-weight:700;margin-right:4px;font-size:8px}
+.log-level.info{color:var(--blue)}.log-level.warn{color:var(--yellow)}
+.log-level.switch{color:var(--green)}.log-level.trigger{color:var(--red)}
+.log-level.error{color:var(--red)}.log-level.predict{color:var(--purple)}
+.log-msg{color:var(--text)}.log-gps{color:var(--dim);font-size:8px;margin-left:3px}
+
+/* Actions buttons in right pane */
+.actions-section{padding:8px;border-top:1px solid var(--border);flex-shrink:0}
+.actions-section h2{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:6px}
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.action-btn{padding:5px;background:var(--card);border:1px solid var(--border);color:var(--text);
+    font-size:8px;font-family:inherit;cursor:pointer;border-radius:3px;text-align:center}
+.action-btn:hover{border-color:var(--blue);color:var(--blue)}
+.action-btn.danger{border-color:rgba(255,68,68,.3);color:var(--red)}
+.action-btn.danger:hover{background:rgba(255,68,68,.1)}
+
+/* ═══ SPINNER ═══ */
+.spinner{display:inline-block;width:10px;height:10px;border:2px solid var(--border);
+    border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ═══ RESPONSIVE ═══ */
+@media(max-width:900px){
+    .dashboard{grid-template-columns:1fr;grid-template-rows:44px 1fr}
+    .left-pane,.right-pane{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+<!-- ═══ HEADER ═══ -->
+<div class="header">
+    <div class="logo">
+        <h1>PATHSTEER <span class="g">GUARDIAN</span></h1>
+    </div>
+    <div class="hdr-center">
+        <span class="badge mode-tripwire" id="badge-mode">TRIPWIRE</span>
+        <span class="badge st-normal" id="badge-state">NORMAL</span>
+        <span class="badge" id="badge-dup" style="background:rgba(100,100,100,.15);color:var(--muted)">DUP OFF</span>
+        <div class="speed-display">
+            <span id="speed-down">0.0</span><span class="unit">↓</span>
+            <span id="speed-up">0.0</span><span class="unit">↑ Mbps</span>
+        </div>
+    </div>
+    <div class="hdr-right">
+        <button class="hdr-btn" onclick="chaosFloat()">🎲 Chaos</button>
+        <button class="hdr-btn" onclick="llmFloat()">⚡ LLM</button>
+        <button class="hdr-btn" onclick="flowFloat()">📡 Flows</button>
+        <button class="hdr-btn" onclick="logFloat()">📋 History</button>
+        <a class="hdr-btn accent" href="/diag/" target="_blank" title="Full diagnostics">🔍 Diag</a>
+    </div>
+</div>
+
+<!-- ═══ LEFT PANE ═══ -->
+<div class="left-pane">
+    <div class="pane-title">UPLINKS</div>
+    <div class="uplinks-list" id="uplinks-list">
+        <!-- Rendered by JS -->
+    </div>
+    <div class="wg-compact" id="wg-compact">
+        <div class="pane-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>WG TUNNELS</span>
+            <span class="wg-summary" id="wg-summary"><span>--</span>/12 UP</span>
+        </div>
+        <div id="wg-rows">
+            <span class="spinner"></span> Loading...
+        </div>
+    </div>
+</div>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-area">
+    <div class="view-tabs">
+        <button class="vtab active" onclick="switchView('status',this)">Status</button>
+        <button class="vtab" onclick="switchView('diag',this)">Diagnostics</button>
+        <button class="vtab" onclick="switchView('tunnels',this)">WG Tunnels</button>
+    </div>
+    <div class="view-content">
+        <!-- STATUS VIEW -->
+        <div class="view-panel active" id="view-status">
+            <div class="active-path-banner" id="active-banner">
+                <div class="path-info">
+                    <span class="status-dot up"></span>
+                    <span class="path-name" id="active-path-name">--</span>
+                    <span class="path-detail" id="active-path-detail">Loading...</span>
+                </div>
+                <div>
+                    <span class="badge-sm good" id="ctrl-badge">CTRL-A</span>
+                    <span class="badge-sm" id="cmd-badge" style="background:rgba(100,100,100,.1);color:var(--muted)">--</span>
+                </div>
+            </div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="val" id="kpi-paths">--</div><div class="lbl">Paths Up</div></div>
+                <div class="kpi"><div class="val" id="kpi-best">--</div><div class="lbl">Best RTT</div><div class="sub" id="kpi-best-name">--</div></div>
+                <div class="kpi"><div class="val" id="kpi-risk">--</div><div class="lbl">Risk</div></div>
+                <div class="kpi"><div class="val" id="kpi-uptime">--</div><div class="lbl">Uptime</div></div>
+            </div>
+
+            <div class="tp-section">
+                <div class="tp-row">
+                    <span class="tp-label">DOWN</span>
+                    <div class="tp-bar"><div class="tp-fill down" id="tp-down-fill" style="width:0%"></div></div>
+                    <span class="tp-val" id="tp-down-val">0.0 Mbps</span>
+                </div>
+                <div class="tp-row">
+                    <span class="tp-label">UP</span>
+                    <div class="tp-bar"><div class="tp-fill up" id="tp-up-fill" style="width:0%"></div></div>
+                    <span class="tp-val" id="tp-up-val">0.0 Mbps</span>
+                </div>
+            </div>
+
+            <div class="pred-section">
+                <h3>Path Prediction</h3>
+                <div class="pred-grid">
+                    <div class="pred-item"><div class="rank">Active</div><div class="name active-pred" id="pred-active">--</div></div>
+                    <div class="pred-item"><div class="rank">Next</div><div class="name" id="pred-next">--</div></div>
+                    <div class="pred-item"><div class="rank">2nd</div><div class="name" id="pred-2nd">--</div></div>
+                    <div class="pred-item"><div class="rank">3rd</div><div class="name" id="pred-3rd">--</div></div>
+                </div>
+            </div>
+
+            <div class="map-container" id="map-wrap">
+                <div id="map"></div>
+                <div class="map-overlay" id="gps-label">GPS: No Fix</div>
+                <div class="map-speed" id="gps-speed">0 mph</div>
+            </div>
+        </div>
+
+        <!-- DIAGNOSTICS VIEW -->
+        <div class="view-panel" id="view-diag">
+            <div class="diag-grid">
+                <div class="diag-card"><h3>Failover Performance</h3>
+                    <div class="stat-row"><span class="stat-lbl">Tests</span><span class="stat-val" id="fo-tests">0</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Success</span><span class="stat-val good" id="fo-success">--%</span></div>
+                    <div class="stat-row"><span class="stat-lbl">P50 Detect</span><span class="stat-val" id="fo-det50">-- ms</span></div>
+                    <div class="stat-row"><span class="stat-lbl">P95 Detect</span><span class="stat-val" id="fo-det95">-- ms</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Worst Total</span><span class="stat-val warn" id="fo-worst">-- ms</span></div>
+                </div>
+                <div class="diag-card"><h3>Stability</h3>
+                    <div class="stat-row"><span class="stat-lbl">Availability</span><span class="stat-val good" id="stab-avail">--%</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Uptime</span><span class="stat-val" id="stab-uptime">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">MTBF</span><span class="stat-val" id="stab-mtbf">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Failures</span><span class="stat-val" id="stab-fails">0</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Route Flaps</span><span class="stat-val" id="stab-flaps">0</span></div>
+                </div>
+                <div class="diag-card"><h3>System Load</h3>
+                    <div class="big-num"><div class="v" id="sys-cpu">--%</div><div class="l">CPU</div></div>
+                    <div class="stat-row"><span class="stat-lbl">Load</span><span class="stat-val" id="sys-load">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Memory</span><span class="stat-val" id="sys-mem">--</span></div>
+                </div>
+                <div class="diag-card"><h3>Active Path Verify</h3>
+                    <div class="stat-row"><span class="stat-lbl">Route</span><span class="stat-val" id="apv-route">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Daemon</span><span class="stat-val" id="apv-daemon">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">Match</span><span class="stat-val" id="apv-match">--</span></div>
+                    <div class="stat-row"><span class="stat-lbl">SRC OK</span><span class="stat-val" id="apv-src">--</span></div>
+                </div>
+            </div>
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:8px 0 4px">Namespaces</div>
+            <div class="ns-grid" id="ns-grid"><span class="spinner"></span></div>
+        </div>
+
+        <!-- WG TUNNELS VIEW -->
+        <div class="view-panel" id="view-tunnels">
+            <table class="tun-table">
+                <thead><tr><th>Status</th><th>Tunnel</th><th>Uplink</th><th>Ctrl</th><th>Endpoint</th><th>Handshake</th><th>RX</th><th>TX</th><th>RTT</th></tr></thead>
+                <tbody id="tun-tbody"><tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px"><span class="spinner"></span> Loading...</td></tr></tbody>
+            </table>
+            <div class="tun-summary">
+                <div class="kpi"><div class="val" id="tun-up">--</div><div class="lbl">UP</div></div>
+                <div class="kpi"><div class="val" id="tun-stale" style="color:var(--yellow)">--</div><div class="lbl">Stale</div></div>
+                <div class="kpi"><div class="val" id="tun-down" style="color:var(--red)">--</div><div class="lbl">Down</div></div>
+                <div class="kpi"><div class="val" id="tun-xfer">--</div><div class="lbl">Transfer</div></div>
+            </div>
+            <div style="text-align:center;margin-top:10px">
+                <button class="hdr-btn accent" onclick="runProbe()" id="probe-btn">⚡ PROBE ALL RTT</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ RIGHT PANE — EVENT LOG + ACTIONS ═══ -->
+<div class="right-pane">
+    <div class="pane-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>EVENT LOG</span>
+        <button class="log-btn" onclick="exportLog()" title="Export CSV">⬇</button>
+    </div>
+    <div class="log-controls">
+        <button class="log-btn active" onclick="filterLog('all',this)">All</button>
+        <button class="log-btn" onclick="filterLog('switch',this)">Switch</button>
+        <button class="log-btn" onclick="filterLog('trigger',this)">Trigger</button>
+        <button class="log-btn" onclick="filterLog('warn',this)">Warn</button>
+        <button class="log-btn" onclick="filterLog('info',this)">Info</button>
+    </div>
+    <div class="log-content" id="event-log-content"></div>
+
+    <div class="actions-section">
+        <h2>Actions</h2>
+        <div class="action-grid">
+            <button class="action-btn" onclick="forceActive('fa')">Force FA</button>
+            <button class="action-btn" onclick="forceActive('fb')">Force FB</button>
+            <button class="action-btn" onclick="forceActive('sl_a')">Force SL_A</button>
+            <button class="action-btn" onclick="forceActive('sl_b')">Force SL_B</button>
+            <button class="action-btn" onclick="forceActive('cell_a')">Force CELL_A</button>
+            <button class="action-btn" onclick="forceActive('cell_b')">Force CELL_B</button>
+            <button class="action-btn" onclick="switchController(0)">CTRL-A</button>
+            <button class="action-btn" onclick="switchController(1)">CTRL-B</button>
+            <button class="action-btn danger" onclick="triggerProtection()">⚠ TRIGGER</button>
+            <button class="action-btn" onclick="clearForce()">↺ AUTO</button>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Hidden LLM state -->
+<input type="hidden" id="llm-prompt" value="Explain quantum computing in simple terms">
+<input type="hidden" id="llm-loops" value="0">
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   PathSteer Guardian — Unified Dashboard
+   Single source of truth: /api/stream (SSE from daemon via Flask)
+   ═══════════════════════════════════════════════════════════════════ */
+
+const UPLINK_LABELS = {cell_a:'T-Mobile',cell_b:'AT&T',sl_a:'Starlink A',sl_b:'Starlink B',fa:'Fiber A',fb:'Fiber B'};
+const UPLINK_TYPES = {cell_a:'lte',cell_b:'lte att',sl_a:'starlink',sl_b:'starlink',fa:'fiber',fb:'fiber'};
+const UPLINK_TYPE_LABELS = {cell_a:'LTE',cell_b:'LTE',sl_a:'LEO',sl_b:'LEO',fa:'FIBER',fb:'FIBER'};
+
+// ─── View switching ───
+function switchView(id, el) {
+    document.querySelectorAll('.vtab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('view-'+id).classList.add('active');
+    el.classList.add('active');
+    if (id === 'diag') fetchDiagnostics();
+    if (id === 'tunnels') fetchTunnels(false);
+}
+
+// ─── Uplink card rendering ───
+let _uplinkInteractionLock = 0;
+function renderUplinks(uplinks, activeUplink) {
+    if (Date.now() < _uplinkInteractionLock) return;
+    const container = document.getElementById('uplinks-list');
+    const avail = uplinks.filter(u => u.enabled && u.available && !u.active);
+    // Score and rank non-active available uplinks for prediction
+    const scored = avail.map(u => ({
+        name: u.name,
+        score: (u.rtt_ms||999) + (u.risk_now||0)*100 + (u.loss_pct||0)*10
+    })).sort((a,b) => a.score - b.score);
+    const totalInv = scored.reduce((s,x) => s + 1000/(x.score+1), 0);
+    const preds = scored.map(x => ({name:x.name, prob:Math.round((1000/(x.score+1))/totalInv*100)}));
+    const predMap = {};
+    preds.forEach((p,i) => { predMap[p.name] = {rank:i, prob:p.prob}; });
+
+    container.innerHTML = uplinks.map(u => {
+        const isActive = u.name === activeUplink;
+        const cls = [
+            'uplink-card',
+            UPLINK_TYPES[u.name]||'',
+            isActive?'active':'',
+            !u.available?'unavailable':'',
+            !u.enabled?'disabled-uplink':''
+        ].filter(Boolean).join(' ');
+
+        const rtt = u.rtt_ms!=null ? u.rtt_ms : null;
+        const loss = u.loss_pct!=null ? u.loss_pct : null;
+        const risk = u.risk_now!=null ? u.risk_now : null;
+        const rttStr = rtt!=null ? rtt.toFixed(0)+'ms' : '--';
+        const lossStr = loss!=null ? loss.toFixed(1)+'%' : '--';
+        const rttCls = rtt==null?'na':rtt>150?'bad':rtt>80?'warn':'good';
+        const lossCls = loss==null?'na':loss>5?'bad':loss>1?'warn':'good';
+        const riskVal = risk!=null ? risk : 0;
+        const riskColor = riskVal>.5?'var(--red)':riskVal>.2?'var(--yellow)':'var(--green)';
+        const riskLbl = riskVal>.5?'HIGH':riskVal>.2?'WARN':'OK';
+
+        // Extra metrics for cell/starlink
+        let extraHtml = '';
+        if (u.cellular) {
+            const rsrp = u.cellular.rsrp!=null?u.cellular.rsrp.toFixed(0):'--';
+            const sinr = u.cellular.sinr!=null?u.cellular.sinr.toFixed(0):'--';
+            extraHtml = `<div class="metrics-row" style="margin-top:3px">
+                <div class="m-cell"><div class="m-lbl">RSRP</div><div class="m-val ${u.cellular.rsrp<-110?'bad':u.cellular.rsrp<-100?'warn':'good'}">${rsrp}</div></div>
+                <div class="m-cell"><div class="m-lbl">SINR</div><div class="m-val ${u.cellular.sinr<5?'bad':u.cellular.sinr<10?'warn':'good'}">${sinr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Carrier</div><div class="m-val" style="font-size:8px">${u.cellular.carrier||'--'}</div></div>
+            </div>`;
+        } else if (u.starlink) {
+            const lat = u.starlink.latency!=null?u.starlink.latency.toFixed(0)+'ms':'--';
+            const obs = u.starlink.obstruction_pct!=null?u.starlink.obstruction_pct.toFixed(0)+'%':'--';
+            extraHtml = `<div class="metrics-row" style="margin-top:3px">
+                <div class="m-cell"><div class="m-lbl">SL Lat</div><div class="m-val">${lat}</div></div>
+                <div class="m-cell"><div class="m-lbl">Obstr</div><div class="m-val ${u.starlink.obstruction_pct>20?'warn':'good'}">${obs}</div></div>
+                <div class="m-cell"><div class="m-lbl">State</div><div class="m-val" style="font-size:8px">${u.starlink.state||'--'}</div></div>
+            </div>`;
+        }
+
+        // Prediction badge
+        let predHtml = '';
+        const p = predMap[u.name];
+        if (p && !isActive) {
+            const cls2 = p.rank===0?'next':p.rank===1?'second':'third';
+            const label = p.rank===0?'NEXT':p.rank===1?'2ND':'3RD';
+            predHtml = `<div class="pred-badge ${cls2}">${label} ${p.prob}%</div>`;
+        }
+
+        return `<div class="${cls}" data-name="${u.name}">
+            ${predHtml}
+            <div class="uplink-hdr">
+                <div>
+                    <span class="uplink-name">${UPLINK_LABELS[u.name]||u.name}</span>
+                    <span class="uplink-type">${UPLINK_TYPE_LABELS[u.name]||''}</span>
+                </div>
+                <div class="uplink-toggle ${u.enabled?'enabled':''}" onclick="event.stopPropagation();toggleUplink('${u.name}')"></div>
+            </div>
+            <div class="metrics-row">
+                <div class="m-cell"><div class="m-lbl">RTT</div><div class="m-val ${rttCls}">${rttStr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Loss</div><div class="m-val ${lossCls}">${lossStr}</div></div>
+                <div class="m-cell"><div class="m-lbl">Fail</div><div class="m-val ${u.consec_fail>0?'bad':'good'}">${u.consec_fail||0}</div></div>
+            </div>
+            ${extraHtml}
+            <div class="risk-wrap">
+                <div class="risk-bar"><div class="risk-fill" style="width:${Math.min(100,riskVal*100)}%;background:${riskColor}"></div></div>
+                <span class="risk-lbl" style="color:${riskColor}">${riskLbl}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ─── Main SSE update ───
+let smoothDown=0, smoothUp=0;
+function updateDashboard(s) {
+    // Mode badge
+    const modeBadge = document.getElementById('badge-mode');
+    modeBadge.textContent = s.mode;
+    modeBadge.className = 'badge mode-' + s.mode.toLowerCase();
+
+    // State badge
+    const stateBadge = document.getElementById('badge-state');
+    stateBadge.textContent = s.state;
+    stateBadge.className = 'badge st-' + s.state.toLowerCase();
+
+    // Dup badge
+    const dupBadge = document.getElementById('badge-dup');
+    if (s.dup_enabled) { dupBadge.textContent='DUP ON'; dupBadge.style.background='rgba(0,255,136,.12)'; dupBadge.style.color='var(--green)'; }
+    else { dupBadge.textContent='DUP OFF'; dupBadge.style.background='rgba(100,100,100,.15)'; dupBadge.style.color='var(--muted)'; }
+
+    // Active uplink — TRUTH from daemon
+    const activeUplink = s.active_uplink || '--';
+    const banner = document.getElementById('active-banner');
+    document.getElementById('active-path-name').textContent = (UPLINK_LABELS[activeUplink]||activeUplink).toUpperCase();
+    document.getElementById('active-path-detail').textContent =
+        `Mode: ${s.mode} | State: ${s.state} | Switches: ${s.switches_this_window||0}`;
+    banner.className = 'active-path-banner' + (s.state!=='NORMAL'?' warn':'');
+
+    // Controller badge
+    document.getElementById('ctrl-badge').textContent = 'CTRL-' + (s.active_controller===1?'B':'A');
+
+    // Last command badge
+    if (s.last_cmd) {
+        document.getElementById('cmd-badge').textContent = s.last_cmd.detail || s.last_cmd.result || '--';
+    }
+
+    // Uplinks
+    const uplinks = s.uplinks || [];
+    renderUplinks(uplinks, activeUplink);
+
+    // KPIs
+    const avail = uplinks.filter(u => u.enabled && u.available);
+    const enabled = uplinks.filter(u => u.enabled);
+    document.getElementById('kpi-paths').textContent = avail.length + '/' + enabled.length;
+
+    if (avail.length > 0) {
+        const sorted = [...avail].sort((a,b) => (a.rtt_ms||999)-(b.rtt_ms||999));
+        document.getElementById('kpi-best').textContent = (sorted[0].rtt_ms||0).toFixed(0) + 'ms';
+        document.getElementById('kpi-best-name').textContent = (UPLINK_LABELS[sorted[0].name]||sorted[0].name);
+    }
+
+    // Global risk
+    const gr = s.global_risk!=null ? s.global_risk : 0;
+    const riskEl = document.getElementById('kpi-risk');
+    riskEl.textContent = gr.toFixed(2);
+    riskEl.style.color = gr>.5?'var(--red)':gr>.2?'var(--yellow)':'var(--green)';
+
+    // Uptime
+    if (s.run_id) {
+        const m = s.run_id.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+        if (m) {
+            const start = new Date(m[1],m[2]-1,m[3],m[4],m[5],m[6]);
+            const mins = Math.floor((Date.now()-start)/60000);
+            document.getElementById('kpi-uptime').textContent = Math.floor(mins/60)+'h '+mins%60+'m';
+        }
+    }
+
+    // Throughput — use 50/50 smoothing (faster response)
+    const dMbps = s.throughput_down_mbps||0;
+    const uMbps = s.throughput_up_mbps||0;
+    smoothDown = smoothDown * 0.5 + dMbps * 0.5;
+    smoothUp = smoothUp * 0.5 + uMbps * 0.5;
+    document.getElementById('speed-down').textContent = smoothDown.toFixed(1);
+    document.getElementById('speed-up').textContent = smoothUp.toFixed(1);
+
+    // Throughput bars (scale to 100 Mbps max, auto-scale)
+    const maxTp = Math.max(10, smoothDown*1.5, smoothUp*1.5);
+    document.getElementById('tp-down-fill').style.width = Math.min(100, smoothDown/maxTp*100)+'%';
+    document.getElementById('tp-up-fill').style.width = Math.min(100, smoothUp/maxTp*100)+'%';
+    document.getElementById('tp-down-val').textContent = smoothDown.toFixed(1)+' Mbps';
+    document.getElementById('tp-up-val').textContent = smoothUp.toFixed(1)+' Mbps';
+
+    // Prediction section
+    const activeU = uplinks.find(u => u.active);
+    const nonActive = avail.filter(u => !u.active);
+    const scored = nonActive.map(u => ({
+        name:u.name, score:(u.rtt_ms||999)+(u.risk_now||0)*100+(u.loss_pct||0)*10
+    })).sort((a,b)=>a.score-b.score);
+    const totalInv = scored.reduce((s,x)=>s+1000/(x.score+1),0);
+    const probs = scored.map(x=>({name:x.name,prob:Math.round((1000/(x.score+1))/totalInv*100)}));
+
+    document.getElementById('pred-active').textContent = activeU ? activeU.name.toUpperCase() : '--';
+    document.getElementById('pred-next').textContent = probs[0] ? probs[0].name.toUpperCase()+' ('+probs[0].prob+'%)' : '--';
+    document.getElementById('pred-2nd').textContent = probs[1] ? probs[1].name.toUpperCase()+' ('+probs[1].prob+'%)' : '--';
+    document.getElementById('pred-3rd').textContent = probs[2] ? probs[2].name.toUpperCase()+' ('+probs[2].prob+'%)' : '--';
+
+    // GPS / Map
+    if (s.gps && s.gps.valid && s.gps.lat !== 0) {
+        document.getElementById('gps-label').textContent = `GPS: ${s.gps.lat.toFixed(5)}, ${s.gps.lon.toFixed(5)}`;
+        document.getElementById('gps-speed').textContent = (s.gps.speed_mph||0).toFixed(0) + ' mph';
+        if (map && !mapDragging) map.setView([s.gps.lat, s.gps.lon], 15);
+        if (mapMarker) mapMarker.setLatLng([s.gps.lat, s.gps.lon]);
+    }
+}
+
+// ─── SSE Connection ───
+let lastState = '';
+const evtSource = new EventSource('/api/stream');
+evtSource.onmessage = (e) => {
+    const s = JSON.parse(e.data);
+    if (s.state !== lastState && lastState) {
+        if (s.state==='PROTECT') addLogEntry('trigger','TRIPWIRE fired: '+s.trigger);
+        else if (s.state==='NORMAL'&&lastState!=='NORMAL') addLogEntry('info','Returned to NORMAL');
+    }
+    lastState = s.state;
+    checkStateChanges(s);
+    updateDashboard(s);
+};
+evtSource.onerror = () => { console.log('SSE reconnecting...'); };
+
+// ─── Event Log ───
+const eventLog = [];
+let logFilter = 'all';
+
+function addLogEntry(level, msg, gps, persist=true) {
+    const now = new Date();
+    const ts = now.toTimeString().split(' ')[0]+'.'+String(now.getMilliseconds()).padStart(3,'0');
+    eventLog.push({time:ts, level, msg, gps:gps||null, timestamp:now});
+    if (eventLog.length>500) eventLog.shift();
+    if (persist) fetch('/api/log/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:level,message:msg,detail:gps||''})}).catch(()=>{});
+    renderLog();
+}
+
+function renderLog() {
+    const c = document.getElementById('event-log-content');
+    const f = logFilter==='all'?eventLog:eventLog.filter(e=>e.level===logFilter);
+    c.innerHTML = f.slice(-100).map(e=>`<div class="log-entry">
+        <span class="log-time">${e.time}</span>
+        <span class="log-level ${e.level}">${e.level.toUpperCase()}</span>
+        <span class="log-msg">${e.msg}</span>
+        ${e.gps?`<span class="log-gps">[${e.gps}]</span>`:''}
+    </div>`).join('');
+    c.scrollTop = c.scrollHeight;
+}
+
+function filterLog(filter, el) {
+    logFilter = filter;
+    document.querySelectorAll('.log-controls .log-btn').forEach(b=>b.classList.remove('active'));
+    if(el) el.classList.add('active');
+    renderLog();
+}
+
+function exportLog() {
+    const csv='Time,Level,Message,GPS\n'+eventLog.map(e=>`${e.time},${e.level},"${e.msg}",${e.gps||''}`).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+    a.download='pathsteer_log_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.csv';
+    a.click();
+}
+
+// ─── State change tracking ───
+let prevState=null, prevMode=null, prevActive=null;
+var llmCostPerToken=0.002, llmSavedDollars=0, llmFailoverCount=0;
+
+function checkStateChanges(s) {
+    const gps = s.gps?.valid?`${s.gps.lat.toFixed(5)},${s.gps.lon.toFixed(5)}`:null;
+    if (prevState!==s.state && prevState!==null) {
+        if (s.state==='PROTECT') addLogEntry('trigger',`TRIPWIRE fired: ${s.trigger}`,gps);
+        else if (s.state==='SWITCHING') addLogEntry('warn','Executing path switch',gps);
+        else if (s.state==='HOLDING') addLogEntry('switch',`Switched to ${s.active_uplink}`,gps);
+        else if (s.state==='NORMAL') addLogEntry('info','Returned to NORMAL',gps);
+    }
+    if (prevMode!==s.mode && prevMode!==null) addLogEntry('info',`Mode: ${s.mode}`,gps);
+    if (prevActive!==s.active_uplink && prevActive!==null) {
+        addLogEntry('switch',`Active: ${prevActive} → ${s.active_uplink}`,gps);
+        // LLM failover value
+        fetch('/api/llm/status').then(r=>r.json()).then(d=>{
+            if(d.running && d.total_tokens>0){
+                let v=d.total_tokens*llmCostPerToken;
+                llmSavedDollars+=v; llmFailoverCount++;
+                addLogEntry('switch',`💰 LLM failover saved $${v.toFixed(4)}`,gps);
+            }
+        }).catch(()=>{});
+    }
+    prevState=s.state; prevMode=s.mode; prevActive=s.active_uplink;
+}
+
+// ─── Actions ───
+async function toggleUplink(name) {
+    _uplinkInteractionLock = Date.now()+2000;
+    const r = await fetch('/api/uplink/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const d = await r.json();
+    const card = document.querySelector(`.uplink-card[data-name="${name}"]`);
+    if(card){
+        const t=card.querySelector('.uplink-toggle');
+        if(t) t.classList.toggle('enabled',d.enabled);
+        card.style.opacity=d.enabled?'1':'0.5';
+    }
+}
+
+async function forceActive(name) {
+    await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:name})});
+    addLogEntry('switch','Force → '+name.toUpperCase(),'manual');
+}
+
+async function forceFail(name) {
+    await fetch('/api/control/fail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:name})});
+    addLogEntry('trigger','Force fail → '+name.toUpperCase(),'manual');
+}
+
+async function clearForce() {
+    await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:'auto'})});
+    addLogEntry('info','Cleared force → AUTO');
+}
+
+async function triggerProtection() {
+    await fetch('/api/control/trigger',{method:'POST'});
+    addLogEntry('trigger','Manual protection trigger','operator');
+}
+
+async function switchController(ctrl) {
+    await fetch('/api/control/controller',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({controller:ctrl})});
+    addLogEntry('switch','Controller → '+(ctrl===0?'A':'B'));
+}
+
+// ─── Diagnostics fetch ───
+async function fetchDiagnostics() {
+    try {
+        const [mR, pR, nR] = await Promise.all([
+            fetch('/diag/api/metrics'), fetch('/diag/api/path'), fetch('/diag/api/namespaces')
+        ]);
+        const metrics=await mR.json(), path=await pR.json(), ns=await nR.json();
+
+        const fo=metrics.failover||{}, st=metrics.stability||{}, ld=metrics.load||{};
+        document.getElementById('fo-tests').textContent=fo.total_tests||0;
+        document.getElementById('fo-success').textContent=(fo.success_rate||0)+'%';
+        document.getElementById('fo-det50').textContent=(fo.detection_p50||0)+' ms';
+        document.getElementById('fo-det95').textContent=(fo.detection_p95||0)+' ms';
+        document.getElementById('fo-worst').textContent=(fo.worst_total_ms||0)+' ms';
+
+        document.getElementById('stab-avail').textContent=(st.availability_pct||0).toFixed(2)+'%';
+        document.getElementById('stab-uptime').textContent=st.uptime_display||'--';
+        document.getElementById('stab-mtbf').textContent=st.mtbf_display||'--';
+        document.getElementById('stab-fails').textContent=st.total_failures||0;
+        document.getElementById('stab-flaps').textContent=st.route_flaps||0;
+
+        const cp=ld.cpu_pct||0;
+        const cpEl=document.getElementById('sys-cpu');
+        cpEl.textContent=cp.toFixed(1)+'%';
+        cpEl.style.color=cp>80?'var(--red)':cp>50?'var(--yellow)':'var(--green)';
+        document.getElementById('sys-load').textContent=(ld.load_1m||0).toFixed(2)+' / '+(ld.load_5m||0).toFixed(2);
+        document.getElementById('sys-mem').textContent=(ld.mem_used_mb||0)+'/'+(ld.mem_total_mb||0)+' MB ('+(ld.mem_pct||0).toFixed(0)+'%)';
+
+        // Active path verify
+        const lb={fa:'FIBER A',fb:'FIBER B',sl_a:'SL_A',sl_b:'SL_B',cell_a:'CELL_A',cell_b:'CELL_B'};
+        document.getElementById('apv-route').textContent=lb[path.active_from_route]||path.active_from_route||'--';
+        document.getElementById('apv-daemon').textContent=lb[path.daemon_says]||path.daemon_says||'--';
+        const matchEl=document.getElementById('apv-match');
+        matchEl.textContent=path.match?'✓ YES':'✗ NO';
+        matchEl.className='stat-val '+(path.match?'good':'bad');
+        const srcEl=document.getElementById('apv-src');
+        srcEl.textContent=path.has_src?'✓ YES':'✗ NO';
+        srcEl.className='stat-val '+(path.has_src?'good':'bad');
+
+        // Namespaces
+        document.getElementById('ns-grid').innerHTML=Object.entries(ns).map(([n,i])=>
+            `<div class="ns-card ${i.exists&&i.ipv4_forward?'healthy':'unhealthy'}">
+                <div class="ns-name">${n}</div>
+                <div class="ns-det">${i.exists?'<span style="color:var(--green)">UP</span>':'<span style="color:var(--red)">DOWN</span>'}
+                 | IFs: ${i.ifaces_up||0} | Fwd4: ${i.ipv4_forward?'✓':'✗'} Fwd6: ${i.ipv6_forward?'✓':'✗'}</div>
+            </div>`
+        ).join('');
+    } catch(e) { console.error('Diag fetch error:', e); }
+}
+
+// ─── WG Tunnel fetch ───
+const fmtB=b=>b>=1073741824?(b/1073741824).toFixed(1)+' GiB':b>=1048576?(b/1048576).toFixed(1)+' MiB':b>=1024?(b/1024).toFixed(0)+' KiB':b+' B';
+
+async function fetchTunnels(probe) {
+    try {
+        const r = await fetch(probe?'/diag/api/tunnels?probe=true':'/diag/api/tunnels');
+        const d = await r.json();
+        renderTunnels(d.tunnels||[]);
+    } catch(e) { console.error('Tunnel fetch error:', e); }
+}
+
+function renderTunnels(T) {
+    const tb=document.getElementById('tun-tbody');
+    if(!T.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted)">No data</td></tr>';return;}
+    let up=0,stale=0,down=0,rx=0,tx=0;
+    tb.innerHTML=T.map(t=>{
+        const st=t.status||'unknown',dc=st==='UP'?'up':st==='STALE'?'stale':'down';
+        if(st==='UP')up++;else if(st==='STALE')stale++;else down++;
+        rx+=t.rx_bytes||0;tx+=t.tx_bytes||0;
+        const cc=t.controller==='A'?'a':'b';
+        const hc=t.last_handshake_sec<0?'bad':t.last_handshake_sec>180?'warn':'good';
+        const pv=t.probe_rtt_ms!=null?`<span class="stat-val ${t.probe_rtt_ms>100?'warn':'good'}">${t.probe_rtt_ms}ms</span>`:'<span style="color:var(--dim)">--</span>';
+        return `<tr><td><span class="status-dot ${dc}"></span>${st}</td><td style="font-weight:600">${t.tunnel}</td><td>${t.uplink_label||t.uplink||'--'}</td><td><span class="ctrl-badge ${cc}">CTRL-${t.controller}</span></td><td style="font-size:8px">${t.endpoint||'--'}</td><td><span class="stat-val ${hc}">${t.last_handshake_display||'--'}</span></td><td>${t.rx_display||'--'}</td><td>${t.tx_display||'--'}</td><td>${pv}</td></tr>`;
+    }).join('');
+    document.getElementById('tun-up').textContent=up;
+    document.getElementById('tun-stale').textContent=stale;
+    document.getElementById('tun-down').textContent=down;
+    document.getElementById('tun-xfer').textContent=fmtB(rx+tx);
+
+    // Also update compact WG in left pane
+    updateWgCompact(T);
+}
+
+function updateWgCompact(T) {
+    const byUplink={};
+    T.forEach(t=>{
+        const ul=t.uplink_label||t.uplink||'?';
+        if(!byUplink[ul]) byUplink[ul]={up:0,total:0};
+        byUplink[ul].total++;
+        if(t.status==='UP') byUplink[ul].up++;
+    });
+    const totalUp=T.filter(t=>t.status==='UP').length;
+    document.getElementById('wg-summary').innerHTML=`<span>${totalUp}</span>/12 UP`;
+    document.getElementById('wg-rows').innerHTML=Object.entries(byUplink).map(([name,c])=>{
+        const cls=c.up===c.total?'up':c.up>0?'stale':'down';
+        return `<div class="wg-row"><span><span class="wg-dot ${cls}"></span>${name}</span><span style="color:var(--muted)">${c.up}/${c.total}</span></div>`;
+    }).join('');
+}
+
+async function runProbe() {
+    const btn=document.getElementById('probe-btn');
+    btn.textContent='⏳ Probing...';btn.disabled=true;
+    await fetchTunnels(true);
+    btn.textContent='⚡ PROBE ALL RTT';btn.disabled=false;
+}
+
+// ─── Map ───
+let map=null, mapMarker=null, mapDragging=false;
+try {
+    map = L.map('map',{zoomControl:false}).setView([30.267,-97.743],12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+        attribution:'© CartoDB', maxZoom:19
+    }).addTo(map);
+    mapMarker = L.circleMarker([30.267,-97.743],{radius:6,fillColor:'#00d4ff',color:'#00d4ff',weight:2,fillOpacity:0.8}).addTo(map);
+    map.on('dragstart',()=>{mapDragging=true});
+    map.on('dragend',()=>{setTimeout(()=>{mapDragging=false},5000)});
+} catch(e) { console.log('Map init skipped'); }
+
+// ─── Initial loads ───
+addLogEntry('info','Guardian UI connected',null,false);
+fetch('/api/status').then(r=>r.json()).then(updateDashboard).catch(()=>{});
+
+// Periodic WG compact refresh
+setInterval(()=>fetchTunnels(false),30000);
+fetchTunnels(false);
+
+// Load event history
+async function loadEventHistory(){
+    try{
+        const r=await fetch('/api/events/history?limit=50');
+        const events=await r.json();
+        events.reverse().forEach(e=>{
+            const ts=e.timestamp?e.timestamp.split(' ')[1]||e.timestamp.substring(11,19):'';
+            eventLog.push({time:ts,level:e.type,msg:e.message,gps:e.detail||null,timestamp:new Date(e.timestamp)});
+        });
+        renderLog();
+    }catch(e){}
+}
+loadEventHistory();
+
+// ─── Chaos Float (preserved from original) ───
+function chaosFloat() {
+    if(document.getElementById('chaos-float')){document.getElementById('chaos-float').remove();return;}
+    let w=document.createElement('div');
+    w.id='chaos-float';
+    w.style.cssText='position:fixed;top:60px;right:20px;width:340px;background:var(--panel);border:2px solid var(--orange);border-radius:8px;z-index:9998;box-shadow:0 0 30px rgba(255,102,0,.2);padding:12px';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="color:var(--orange);font-weight:bold;font-size:12px">🎲 Chaos Injection</span>
+        <button onclick="document.getElementById('chaos-float').remove()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;font-family:inherit">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Inject latency/loss into uplink scoring. Does NOT affect real packets.</div>
+    <div id="chaos-controls"></div>
+    <div style="margin-top:8px;display:flex;gap:6px">
+        <button onclick="chaosApply()" style="flex:1;background:var(--orange);color:#000;border:none;padding:6px;font-family:inherit;font-size:10px;cursor:pointer;border-radius:3px;font-weight:bold">APPLY</button>
+        <button onclick="chaosReset()" style="flex:1;background:var(--card);color:var(--text);border:1px solid var(--border);padding:6px;font-family:inherit;font-size:10px;cursor:pointer;border-radius:3px">RESET</button>
+    </div>`;
+    document.body.appendChild(w);
+    // Build per-uplink controls
+    fetch('/api/status').then(r=>r.json()).then(s=>{
+        const ctrl=document.getElementById('chaos-controls');
+        ctrl.innerHTML=(s.uplinks||[]).map(u=>`<div style="margin-bottom:6px;padding:6px;background:var(--card);border-radius:3px">
+            <div style="font-weight:bold;font-size:10px;margin-bottom:4px">${UPLINK_LABELS[u.name]||u.name}</div>
+            <div style="display:flex;gap:6px;align-items:center;font-size:9px">
+                <label>RTT+<input type="number" id="chaos-rtt-${u.name}" value="0" min="0" max="5000" step="10" style="width:50px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:2px;font-size:9px;font-family:inherit;border-radius:2px">ms</label>
+                <label>Loss+<input type="number" id="chaos-loss-${u.name}" value="0" min="0" max="100" step="5" style="width:40px;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:2px;font-size:9px;font-family:inherit;border-radius:2px">%</label>
+            </div>
+        </div>`).join('');
+    });
+}
+
+async function chaosApply() {
+    const s=await(await fetch('/api/status')).json();
+    const chaos={};
+    (s.uplinks||[]).forEach(u=>{
+        const rtt=parseInt(document.getElementById('chaos-rtt-'+u.name)?.value||0);
+        const loss=parseInt(document.getElementById('chaos-loss-'+u.name)?.value||0);
+        if(rtt>0||loss>0) chaos[u.name]={rtt_add:rtt,loss_add:loss};
+    });
+    await fetch('/api/chaos/inject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(chaos)});
+    addLogEntry('warn','Chaos injected: '+JSON.stringify(chaos));
+}
+
+async function chaosReset() {
+    await fetch('/api/chaos/reset',{method:'POST'});
+    addLogEntry('info','Chaos reset');
+}
+
+// ─── LLM Float (preserved from original) ───
+function llmFloat() {
+    if(document.getElementById('llm-float')){document.getElementById('llm-float').remove();return;}
+    let w=document.createElement('div');
+    w.id='llm-float';
+    w.style.cssText='position:fixed;bottom:20px;right:20px;width:650px;height:70vh;background:var(--panel);border:2px solid var(--blue);border-radius:8px;z-index:9998;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,212,255,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="llmDrag(event)">
+        <span style="color:var(--blue);font-size:12px;font-weight:bold">⚡ PathSteer LLM Lab</span>
+        <div><span id="llm-fl-status" style="font-size:10px;color:var(--muted);margin-right:8px">Stopped</span><button onclick="document.getElementById('llm-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    </div>
+    <div style="padding:8px 12px;flex-shrink:0">
+        <textarea id="llm-fl-prompt" rows="2" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px;font-size:12px;font-family:inherit;border-radius:4px;resize:vertical">${document.getElementById('llm-prompt').value}</textarea>
+        <div style="display:flex;gap:6px;margin-top:6px">
+            <select id="llm-fl-loops" style="background:var(--card);color:var(--text);border:1px solid var(--border);font-size:11px;font-family:inherit;padding:5px;border-radius:4px">
+                <option value="0">Continuous</option><option value="1">1 shot</option><option value="5">5</option><option value="10">10</option><option value="50">50</option>
+            </select>
+            <button onclick="llmFlStart()" style="flex:1;background:var(--green);color:var(--bg);border:none;padding:6px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">▶ START</button>
+            <button onclick="llmStop()" style="background:var(--red);color:white;border:none;padding:6px 12px;font-size:11px;font-family:inherit;cursor:pointer;border-radius:4px;font-weight:bold">■</button>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px;font-size:10px;flex-wrap:wrap">
+            <div>⚡ <span id="llm-fl-tps" style="color:var(--blue);font-weight:bold">0</span> tok/s</div>
+            <div>📊 <span id="llm-fl-total" style="color:var(--green);font-weight:bold">0</span> tokens</div>
+            <div>🔄 <span id="llm-fl-reqs" style="color:var(--text)">0</span> reqs</div>
+            <div>❌ <span id="llm-fl-errs" style="color:var(--red)">0</span></div>
+            <div>💰 $<span id="llm-fl-cost" style="color:var(--yellow);font-weight:bold">0.00</span></div>
+            <div>🛡️ $<span id="llm-fl-saved" style="color:var(--green);font-weight:bold">0.00</span> saved</div>
+        </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;margin:0 12px 12px;min-height:0;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;line-height:1.7" id="llm-fl-output">Waiting...</div>`;
+    document.body.appendChild(w);
+    llmFlPoll();
+}
+var llmDragEl=null,llmDragX=0,llmDragY=0;
+function llmDrag(e){llmDragEl=document.getElementById('llm-float');llmDragX=e.clientX-llmDragEl.offsetLeft;llmDragY=e.clientY-llmDragEl.offsetTop;document.onmousemove=function(e){llmDragEl.style.left=(e.clientX-llmDragX)+'px';llmDragEl.style.top=(e.clientY-llmDragY)+'px';llmDragEl.style.right='auto';llmDragEl.style.bottom='auto'};document.onmouseup=function(){document.onmousemove=null}}
+async function llmFlStart(){const p=document.getElementById('llm-fl-prompt').value;const l=parseInt(document.getElementById('llm-fl-loops').value);document.getElementById('llm-prompt').value=p;await fetch('/api/llm/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p,loop_count:l})})}
+function llmFlPoll(){if(!document.getElementById('llm-float'))return;fetch('/api/llm/status').then(r=>r.json()).then(d=>{let el;el=document.getElementById('llm-fl-tps');if(el)el.textContent=d.tokens_per_sec||0;el=document.getElementById('llm-fl-total');if(el)el.textContent=d.total_tokens||0;el=document.getElementById('llm-fl-reqs');if(el)el.textContent=d.total_requests||0;el=document.getElementById('llm-fl-errs');if(el)el.textContent=d.errors||0;el=document.getElementById('llm-fl-output');if(el&&d.full_log){el.textContent=d.full_log;el.scrollTop=el.scrollHeight}el=document.getElementById('llm-fl-status');if(el){el.textContent=d.running?'⚡ Running':'Stopped';el.style.color=d.running?'var(--green)':'var(--muted)'}let cost=(d.total_tokens||0)*llmCostPerToken;el=document.getElementById('llm-fl-cost');if(el)el.textContent=cost.toFixed(4);el=document.getElementById('llm-fl-saved');if(el)el.textContent=llmSavedDollars.toFixed(4)}).catch(()=>{});setTimeout(llmFlPoll,500)}
+async function llmStop(){await fetch('/api/llm/stop',{method:'POST'})}
+
+// ─── Flow Float (preserved from original) ───
+function flowFloat(){
+    if(document.getElementById('flow-float')){document.getElementById('flow-float').remove();return;}
+    let w=document.createElement('div');w.id='flow-float';
+    w.style.cssText='position:fixed;top:60px;left:280px;width:700px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9997;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="flowDrag(event)"><span style="color:var(--purple);font-size:12px;font-weight:bold">📡 Flow Monitor</span><button onclick="document.getElementById('flow-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    <div style="display:flex;gap:12px;padding:6px 12px;font-size:10px;background:var(--card)"><div>Active: <span id="flow-fl-active" style="color:var(--green);font-weight:bold">0</span></div><div>SIP: <span id="flow-fl-sip" style="color:var(--blue);font-weight:bold">0</span></div><div>🛡️ Failovers: <span id="flow-fl-fo" style="color:var(--yellow);font-weight:bold">0</span></div></div>
+    <div id="flow-fl-table" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:9px"></div>`;
+    document.body.appendChild(w);
+}
+var flowDragEl=null,flowDragX=0,flowDragY=0;
+function flowDrag(e){flowDragEl=document.getElementById('flow-float');flowDragX=e.clientX-flowDragEl.offsetLeft;flowDragY=e.clientY-flowDragEl.offsetTop;document.onmousemove=function(e){flowDragEl.style.left=(e.clientX-flowDragX)+'px';flowDragEl.style.top=(e.clientY-flowDragY)+'px'};document.onmouseup=function(){document.onmousemove=null}}
+setInterval(()=>{fetch('/api/flows').then(r=>r.json()).then(d=>{if(document.getElementById('flow-float')){let el=document.getElementById('flow-fl-active');if(el)el.textContent=d.active_flows||0;el=document.getElementById('flow-fl-sip');if(el)el.textContent=d.active_sip_calls||0;el=document.getElementById('flow-fl-fo');if(el)el.textContent=d.failover_count||0}}).catch(()=>{})},2000);
+
+// ─── Log History Float (preserved from original) ───
+function logFloat(){
+    if(document.getElementById('log-float')){document.getElementById('log-float').remove();return;}
+    let now=new Date(),hr=new Date(now-3600000);
+    let fmtDT=d=>d.toISOString().slice(0,16);
+    let w=document.createElement('div');w.id='log-float';
+    w.style.cssText='position:fixed;top:80px;left:300px;width:750px;height:70vh;background:var(--panel);border:2px solid var(--purple);border-radius:8px;z-index:9996;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(123,44,191,.2);resize:both;overflow:hidden';
+    w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:linear-gradient(90deg,var(--card),var(--panel));cursor:move" onmousedown="logHistDrag(event)"><span style="color:var(--purple);font-size:12px;font-weight:bold">📋 Event History</span><button onclick="document.getElementById('log-float').remove()" style="background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;font-family:inherit">✕</button></div>
+    <div style="display:flex;gap:6px;padding:8px 12px;align-items:center;background:var(--card);border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--muted)">From:</span><input type="datetime-local" id="log-fl-start" value="${fmtDT(hr)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <span style="font-size:9px;color:var(--muted)">To:</span><input type="datetime-local" id="log-fl-end" value="${fmtDT(now)}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);font-size:10px;font-family:inherit;padding:4px;border-radius:3px">
+        <button onclick="logFlLoad()" style="background:var(--blue);color:var(--bg);border:none;padding:4px 12px;font-size:10px;font-family:inherit;cursor:pointer;border-radius:3px;font-weight:bold">LOAD</button>
+        <button onclick="logFlLoad('last1h')" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">1H</button>
+        <button onclick="logFlLoad('last6h')" style="background:none;border:1px solid var(--border);color:var(--muted);padding:4px 8px;font-size:9px;font-family:inherit;cursor:pointer;border-radius:3px">6H</button>
+    </div>
+    <div id="log-fl-content" style="flex:1;overflow-y:auto;padding:8px 12px;font-size:10px"></div>`;
+    document.body.appendChild(w);
+    logFlLoad('last1h');
+}
+var logHistDragEl=null;
+function logHistDrag(e){logHistDragEl=document.getElementById('log-float');let dx=e.clientX-logHistDragEl.offsetLeft,dy=e.clientY-logHistDragEl.offsetTop;document.onmousemove=function(e){logHistDragEl.style.left=(e.clientX-dx)+'px';logHistDragEl.style.top=(e.clientY-dy)+'px'};document.onmouseup=function(){document.onmousemove=null}}
+async function logFlLoad(preset){
+    let start=document.getElementById('log-fl-start')?.value,end=document.getElementById('log-fl-end')?.value,etype='all';
+    if(preset){let now=new Date();end=now.toISOString();let ms=preset==='last1h'?3600000:preset==='last6h'?21600000:86400000;start=new Date(now-ms).toISOString();}else{start=start?new Date(start).toISOString():'';end=end?new Date(end).toISOString():'';}
+    try{const r=await fetch(`/api/log/query?start=${start}&end=${end}&type=${etype}&limit=500`);const d=await r.json();let c=document.getElementById('log-fl-content');if(c){if(!d.events||!d.events.length){c.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center">No events</div>';return;}c.innerHTML=d.events.map(e=>{let color=e.type==='switch'?'var(--yellow)':e.type==='trigger'?'var(--red)':'var(--muted)';let time=e.server_time?e.server_time.replace('T',' ').slice(0,19):'?';return`<div style="padding:2px 0;border-bottom:1px solid var(--border);display:flex;gap:8px"><span style="color:var(--muted);min-width:130px">${time}</span><span style="color:${color};min-width:55px;font-weight:bold">${(e.type||'info').toUpperCase()}</span><span>${e.message||''}</span></div>`}).join('');c.scrollTop=c.scrollHeight;}}catch(e){console.error(e)}
+}
+</script>
+</body>
+</html>
