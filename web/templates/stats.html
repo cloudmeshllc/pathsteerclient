@@ -178,7 +178,7 @@ function renderStatus(d){
     // Find active uplink RTT/loss
     const au=(d.uplinks||[]).find(u=>u.active);
     if(au){
-        S('kpi-rtt',au.rtt_msp=d.through+'ms');
+        S('kpi-rtt',au.rtt_ms.toFixed(0)+'ms');
         document.getElementById('kpi-rtt').className='val '+(au.rtt_ms>100?'warn':au.rtt_ms>200?'bad':'');
         S('kpi-loss',au.loss_pct.toFixed(1)+'%');
         document.getElementById('kpi-loss').className='val '+(au.loss_pct>5?'bad':au.loss_pct>1?'warn':'good');
@@ -213,7 +213,7 @@ function renderUplinks(uplinks){
         return `<div class="uplink-card ${cls}">
             <div class="uplink-top"><span class="uplink-name">${UPLINK_ICONS[u.name]||u.name}</span><span class="uplink-type">${u.name}</span></div>
             <div class="uplink-stats">
-                <div class="uplink-stat"><span class="k">RTT</span><span class="v ${rttClass}">${u.rtt_msp=d.throu1)}ms</span></div>
+                <div class="uplink-stat"><span class="k">RTT</span><span class="v ${rttClass}">${u.rtt_ms.toFixed(1)}ms</span></div>
                 <div class="uplink-stat"><span class="k">Loss</span><span class="v ${lossClass}">${u.loss_pct.toFixed(1)}%</span></div>
                 <div class="uplink-stat"><span class="k">Risk</span><span class="v ${riskClass}">${u.risk_now.toFixed(2)}</span></div>
             </div>
