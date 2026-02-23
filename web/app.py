@@ -19,6 +19,7 @@ import time
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request, Response
+from diagnostics import diag_bp
 
 app = Flask(__name__)
 
@@ -695,6 +696,7 @@ def api_log_status_json():
     except:
         return jsonify({})
 
+app.register_blueprint(diag_bp, url_prefix='/diag')
 if __name__ == '__main__':
     # Ensure directories exist
     os.makedirs('/run/pathsteer', exist_ok=True)
