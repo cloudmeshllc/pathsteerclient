@@ -1595,6 +1595,12 @@ static void process_one_command(const char* cmd, const char* cmd_id) {
                 dup_disable();
             } else if (strcmp(mode, "tripwire") == 0) {
                 g_status.mode = MODE_TRIPWIRE;
+                g_status.ecmp_mask = 0;
+                g_status.force_locked = false;
+                {
+                    uplink_id_t best = select_best_uplink();
+                    execute_switch(best);
+                }
             } else if (strcmp(mode, "mirror") == 0) {
                 g_status.mode = MODE_MIRROR;
             } else if (strcmp(mode, "ecmp") == 0) {
@@ -2064,6 +2070,7 @@ int main(int argc, char** argv) {
                             if (new_mask) {
                                 log_event("ecmp_degrade", "{\"removed\":\"%s\",\"mask\":%d}",
                                     UPLINK_NAMES[g_status.active_uplink], new_mask);
+                                g_status.ecmp_mask = new_mask;
                                 execute_ecmp(new_mask);
                                 break;
                             }
