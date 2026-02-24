@@ -105,17 +105,13 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
 
 /* ═══ MAIN AREA ═══ */
 .main-area{background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
-.view-tabs{display:none}
+.view-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);flex-shrink:0}
 .vtab{padding:7px 14px;background:none;border:none;color:var(--muted);font-size:9px;font-weight:600;
     font-family:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px;
     border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
 .vtab:hover{color:var(--text)}.vtab.active{color:var(--blue);border-bottom-color:var(--blue)}
 .view-content{flex:1;overflow-y:auto;padding:8px;position:relative}
-.vp{max-height:0;overflow:hidden;transition:max-height .4s ease,opacity .3s ease;opacity:0}.vp.active{max-height:3000px;opacity:1;overflow-y:auto}
-.acc-hdr{padding:8px 12px;background:var(--card);border:1px solid var(--border);color:var(--blue);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;margin-top:2px;display:flex;justify-content:space-between;align-items:center;transition:background .2s}
-.acc-hdr:hover{background:var(--border)}
-.acc-hdr .arrow{transition:transform .3s;font-size:8px}
-.acc-hdr.open .arrow{transform:rotate(180deg)}
+.vp{position:absolute;top:0;left:0;right:0;opacity:0;transform:translateY(30px);pointer-events:none;transition:opacity .35s ease,transform .35s ease}.vp.active{opacity:1;transform:translateY(0);pointer-events:auto;position:relative}
 
 /* Active path banner */
 .apb{background:linear-gradient(135deg,rgba(0,255,136,.03),rgba(0,212,255,.03));
@@ -196,47 +192,27 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
 
 /* ═══ MOBILE ═══ */
 @media(max-width:768px){
-    .dashboard{grid-template-columns:1fr;grid-template-rows:48px 1fr 0px}
+    .dashboard{grid-template-columns:1fr;grid-template-rows:48px 1fr 120px}
     .left-pane{display:none}
-    .bottom-bar{display:none}
     .header{padding:0 8px}
-    .hdr-right{display:none!important}
-    body{font-size:12px;padding-bottom:52px}
+    .hdr-right .hdr-btn{display:none}
+    .hdr-right .hdr-btn.mob-show{display:inline-block}
+    body{font-size:12px}
     .kpi-row{grid-template-columns:repeat(3,1fr)}
     .kpi .val{font-size:22px}
     .tp-bar{height:18px}
     .uc{padding:10px;margin-bottom:6px}
     .uc-name{font-size:13px}
     .act-btn{padding:10px;font-size:11px}
+    .view-tabs{overflow-x:auto}
+    .vtab{padding:10px 16px;font-size:11px}
     .speed-hdr{font-size:22px}
-    #mob-uplinks-wrap{display:block!important}
-    #mob-log-wrap{display:block!important}
-    #mob-toolbar{display:flex!important}
-    #mob-drawer{display:block!important}
-    .view-content{padding-bottom:60px}
 }
 @media(max-width:480px){
     .kpi-row{grid-template-columns:repeat(2,1fr)}
     .diag-grid{grid-template-columns:1fr}
 }
-
-/* Mobile toolbar + drawer */
-#mob-toolbar{display:none;position:fixed;bottom:0;left:0;right:0;height:48px;background:var(--panel);border-top:2px solid var(--border);z-index:9990;align-items:center;justify-content:space-around;padding:0 8px;gap:4px}
-#mob-toolbar button{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;flex:1;max-width:80px;text-align:center}
-#mob-toolbar button.active{border-color:var(--blue);color:var(--blue)}
-#mob-drawer{display:none;position:fixed;bottom:48px;left:0;right:0;max-height:60vh;background:var(--panel);border-top:2px solid var(--blue);z-index:9989;overflow-y:auto;padding:8px;transform:translateY(100%);transition:transform .3s ease}
-#mob-drawer.open{transform:translateY(0)}
-#mob-drawer .drawer-section{margin-bottom:8px}
-#mob-drawer .drawer-title{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--blue);text-transform:uppercase;margin-bottom:4px}
-#mob-drawer .mob-act-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
-#mob-drawer .mob-act-btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer;text-align:center}
-#mob-drawer .mob-act-btn:active{background:var(--blue);color:var(--bg)}
-#mob-uplinks-wrap{display:none}
-#mob-log-wrap{display:none}
-#mob-log-wrap .log-content{max-height:300px;overflow-y:auto}
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -320,7 +296,6 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
     </div>
     <div class="view-content">
         <!-- STATUS VIEW -->
-        <div class="acc-hdr open" onclick="toggleAcc(this,'status')">STATUS <span class="arrow">▼</span></div>
         <div class="vp active" id="view-status">
             <div class="apb" id="apb">
                 <div style="display:flex;align-items:center">
@@ -370,54 +345,7 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
             </div>
         </div>
 
-
-        <!-- MOBILE UPLINKS (phone only) -->
-        <div id="mob-uplinks-wrap">
-            <div class="acc-hdr" onclick="toggleAcc(this,'mobileup')">UPLINKS <span class="arrow">&#9660;</span></div>
-            <div class="vp" id="view-mobileup">
-                <div id="uplinks-list-mobile"></div>
-                <div style="margin-top:4px">
-                    <div style="font-size:8px;color:var(--muted);letter-spacing:1px;font-weight:700;margin-bottom:3px">FORCE ACTIVE</div>
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px">
-                        <button class="act-btn" onclick="forceActive('fa')">FA</button>
-                        <button class="act-btn" onclick="forceActive('fb')">FB</button>
-                        <button class="act-btn" onclick="forceActive('sl_a')">SL_A</button>
-                        <button class="act-btn" onclick="forceActive('sl_b')">SL_B</button>
-                        <button class="act-btn" onclick="forceActive('cell_a')">CELL_A</button>
-                        <button class="act-btn" onclick="forceActive('cell_b')">CELL_B</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- MOBILE VIEW -->
-        <div class="acc-hdr" onclick="toggleAcc(this,'mobile')">MOBILE / GPS <span class="arrow">▼</span></div>
-        <div class="vp" id="view-mobile">
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px">
-                <div class="kpi"><div class="val" id="gps-speed">0</div><div class="lbl">MPH</div></div>
-                <div class="kpi"><div class="val" id="gps-heading">--</div><div class="lbl">Heading</div></div>
-                <div class="kpi"><div class="val" id="gps-lat">--</div><div class="lbl">Latitude</div></div>
-                <div class="kpi"><div class="val" id="gps-lon">--</div><div class="lbl">Longitude</div></div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-                <div class="diag-card"><h3>GPS Status</h3>
-                    <div class="stat-row"><span class="stat-lbl">Fix</span><span class="stat-val" id="gps-fix">--</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Satellites</span><span class="stat-val" id="gps-sat">--</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Accuracy</span><span class="stat-val" id="gps-acc">--</span></div>
-                </div>
-                <div class="diag-card"><h3>Signal Environment</h3>
-                    <div class="stat-row"><span class="stat-lbl">Cell Tower</span><span class="stat-val" id="gps-cell">--</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Handoffs</span><span class="stat-val" id="gps-ho">0</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Band</span><span class="stat-val" id="gps-band">--</span></div>
-                </div>
-            </div>
-            <div style="margin-top:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden;height:200px;position:relative">
-                <div id="gps-map" style="width:100%;height:100%;background:var(--bg)"></div>
-            </div>
-        </div>
-
         <!-- DIAGNOSTICS VIEW -->
-        <div class="acc-hdr" onclick="toggleAcc(this,'diag')">DIAGNOSTICS <span class="arrow">▼</span></div>
         <div class="vp" id="view-diag">
             <div class="diag-grid">
                 <div class="diag-card"><h3>Failover Performance</h3>
@@ -448,7 +376,6 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
         </div>
 
         <!-- WG TUNNELS VIEW -->
-        <div class="acc-hdr" onclick="toggleAcc(this,'tunnels')">WG TUNNELS <span class="arrow">▼</span></div>
         <div class="vp" id="view-tunnels">
             <div style="margin-bottom:8px;text-align:right">
                 <button class="hdr-btn" onclick="runProbe()" id="probe-btn">⚡ PROBE ALL RTT</button>
@@ -460,21 +387,6 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
         </div>
     </div>
 </div>
-
-
-        <!-- MOBILE EVENT LOG (phone only) -->
-        <div id="mob-log-wrap">
-            <div class="acc-hdr" onclick="toggleAcc(this,'moblog')">EVENT LOG <span class="arrow">&#9660;</span></div>
-            <div class="vp" id="view-moblog">
-                <div class="log-controls" style="display:flex;gap:4px;margin-bottom:4px">
-                    <button class="log-btn active" onclick="filterLog('all',this)">All</button>
-                    <button class="log-btn" onclick="filterLog('switch',this)">Switch</button>
-                    <button class="log-btn" onclick="filterLog('trigger',this)">Trigger</button>
-                    <button class="log-btn" onclick="filterLog('warn',this)">Warn</button>
-                </div>
-                <div class="log-content" id="mob-log-content"><div class="log-inner" id="mob-log-inner"></div></div>
-            </div>
-        </div>
 
 <!-- ═══ BOTTOM — EVENT LOG ═══ -->
 <div class="bottom-bar">
@@ -504,19 +416,13 @@ const UT={cell_a:'lte',cell_b:'lte att',sl_a:'starlink',sl_b:'starlink',fa:'fibe
 const UTL={cell_a:'LTE',cell_b:'LTE',sl_a:'LEO',sl_b:'LEO',fa:'FIBER',fb:'FIBER'};
 
 // View switching
-function toggleAcc(hdr,id){
-    const vp=document.getElementById("view-"+id);
-    const isOpen=vp.classList.contains("active");
-    if(isOpen){
-        vp.classList.remove("active");
-        hdr.classList.remove("open");
-    }else{
-        vp.classList.add("active");
-        hdr.classList.add("open");
-        if(id==="diag")fetchDiag();if(id==="tunnels")fetchTunnels(false);
-    }
+function switchView(id,el){
+    document.querySelectorAll('.vtab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.vp').forEach(p=>p.classList.remove('active'));
+    document.getElementById('view-'+id).classList.add('active');
+    el.classList.add('active');
+    if(id==='diag')fetchDiag();if(id==='tunnels')fetchTunnels(false);
 }
-function switchView(id,el){toggleAcc(document.querySelector(".acc-hdr.open"),id);}
 
 // ─── Uplink rendering ───
 let _lock=0;
@@ -688,7 +594,7 @@ function updateDashboard(s){
     if(s.last_cmd) document.getElementById('cmd-badge').textContent=s.last_cmd.detail||s.last_cmd.result||'--';
 
     // Uplinks
-    window._ecmpMode=(s.mode==="ECMP");window._ecmpMask=s.ecmp_mask||0;renderUplinks(s.uplinks||[],au);syncMobileUplinks();syncMobileLog();
+    window._ecmpMode=(s.mode==="ECMP");window._ecmpMask=s.ecmp_mask||0;renderUplinks(s.uplinks||[],au);
 
     // KPIs
     const avail=(s.uplinks||[]).filter(u=>u.enabled&&u.available);
@@ -703,39 +609,6 @@ function updateDashboard(s){
     const rEl=document.getElementById('kpi-risk');
     rEl.textContent=gr.toFixed(2);rEl.style.color=gr>.5?'var(--red)':gr>.2?'var(--yellow)':'var(--green)';
     document.getElementById('kpi-sw').textContent=s.switches_this_window||0;
-    /* GPS / Mobile panel */
-    if(s.gps){
-        document.getElementById("gps-speed").textContent=s.gps.speed_mph?Math.round(s.gps.speed_mph):"0";
-        document.getElementById("gps-heading").textContent=s.gps.heading?Math.round(s.gps.heading)+"°":"--";
-        document.getElementById("gps-lat").textContent=s.gps.lat?s.gps.lat.toFixed(5):"--";
-        document.getElementById("gps-lon").textContent=s.gps.lon?s.gps.lon.toFixed(5):"--";
-        document.getElementById("gps-fix").textContent=s.gps.valid?"3D FIX":"NO FIX";
-        document.getElementById("gps-fix").style.color=s.gps.valid?"var(--green)":"var(--red)";
-    }
-    /* Cell info from active uplink */
-    const cellUp=(s.uplinks||[]).find(u=>u.cellular&&u.cellular.connected);
-    if(cellUp&&cellUp.cellular){
-        document.getElementById("gps-cell").textContent=cellUp.cellular.cell_id||"--";
-        document.getElementById("gps-band").textContent=cellUp.cellular.band||"--";
-    }
-    /* GPS Map */
-    if(s.gps&&s.gps.valid&&s.gps.lat!==0){
-        if(!window._gpsMap){
-            window._gpsMap=L.map("gps-map",{zoomControl:false,attributionControl:false}).setView([s.gps.lat,s.gps.lon],14);
-            L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(window._gpsMap);
-            window._gpsMarker=L.circleMarker([s.gps.lat,s.gps.lon],{radius:6,color:"#00d4ff",fillColor:"#00d4ff",fillOpacity:0.8}).addTo(window._gpsMap);
-            window._gpsTrail=L.polyline([],{color:"#00ff88",weight:2,opacity:0.6}).addTo(window._gpsMap);
-            window._gpsHeat=[];
-        }
-        window._gpsMarker.setLatLng([s.gps.lat,s.gps.lon]);
-        window._gpsMap.panTo([s.gps.lat,s.gps.lon]);
-        window._gpsTrail.addLatLng([s.gps.lat,s.gps.lon]);
-        if(window._gpsTrail.getLatLngs().length>500)window._gpsTrail.getLatLngs().splice(0,1);
-        /* Heat bubble on switch events */
-        if(s.state==="SWITCHING"||s.state==="PROTECT"){
-            L.circleMarker([s.gps.lat,s.gps.lon],{radius:12,color:"#ff4444",fillColor:"#ff4444",fillOpacity:0.3,weight:1}).addTo(window._gpsMap);
-        }
-    }
 
     if(s.run_id){const m=s.run_id.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
         if(m){const st=new Date(Date.UTC(m[1],m[2]-1,m[3],m[4],m[5],m[6]));const mins=Math.floor((Date.now()-st)/60000);if(mins<0)return;
@@ -995,36 +868,5 @@ w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:
 document.body.appendChild(w);lhLoad('1h');}
 async function lhLoad(p){const ms=p==='1h'?3600000:p==='6h'?21600000:86400000;const now=new Date();try{const r=await fetch(`/api/log/query?start=${new Date(now-ms).toISOString()}&end=${now.toISOString()}&type=all&limit=500`);const d=await r.json();const b=document.getElementById('logh-body');if(b){if(!d.events?.length){b.innerHTML='<div style="color:var(--muted);padding:16px;text-align:center">No events</div>';return;}b.innerHTML=d.events.map(e=>{const c=e.type==='switch'?'var(--yellow)':e.type==='trigger'?'var(--red)':'var(--muted)';return`<div style="padding:2px 0;border-bottom:1px solid var(--border);display:flex;gap:6px"><span style="color:var(--muted);min-width:120px">${(e.server_time||'').replace('T',' ').slice(0,19)}</span><span style="color:${c};min-width:50px;font-weight:bold">${(e.type||'info').toUpperCase()}</span><span>${e.message||''}</span></div>`;}).join('');b.scrollTop=b.scrollHeight;}}catch(e){console.error(e);}}
 </script>
-
-<!-- ═══ MOBILE TOOLBAR ═══ -->
-<div id="mob-toolbar">
-    <button onclick="chaosFloat()">🎲</button>
-    <button onclick="toggleEcmp()">⚙️</button>
-    <button onclick="flowFloat()">📡</button>
-    <button onclick="logHistFloat()">📋</button>
-    <button id="mob-ham" onclick="toggleDrawer()">☰</button>
-</div>
-<div id="mob-drawer">
-    <div class="drawer-section">
-        <div class="drawer-title">Force Active</div>
-        <div class="mob-act-grid">
-            <button class="mob-act-btn" onclick="forceActive('fa');toggleDrawer()">FA</button>
-            <button class="mob-act-btn" onclick="forceActive('fb');toggleDrawer()">FB</button>
-            <button class="mob-act-btn" onclick="forceActive('sl_a');toggleDrawer()">SL_A</button>
-            <button class="mob-act-btn" onclick="forceActive('sl_b');toggleDrawer()">SL_B</button>
-            <button class="mob-act-btn" onclick="forceActive('cell_a');toggleDrawer()">CELL_A</button>
-            <button class="mob-act-btn" onclick="forceActive('cell_b');toggleDrawer()">CELL_B</button>
-        </div>
-    </div>
-    <div class="drawer-section">
-        <div class="drawer-title">Tools</div>
-        <div class="mob-act-grid">
-            <button class="mob-act-btn" onclick="llmFloat();toggleDrawer()">⚡ LLM</button>
-            <a class="mob-act-btn" href="/diag/" target="_blank" style="text-decoration:none;color:var(--text)">🔍 Diag</a>
-            <button class="mob-act-btn" onclick="toggleDrawer()">✕ Close</button>
-        </div>
-    </div>
-</div>
-
 </body>
 </html>

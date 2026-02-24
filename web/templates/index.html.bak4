@@ -196,44 +196,26 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
 
 /* ═══ MOBILE ═══ */
 @media(max-width:768px){
-    .dashboard{grid-template-columns:1fr;grid-template-rows:48px 1fr 0px}
+    .dashboard{grid-template-columns:1fr;grid-template-rows:48px 1fr 120px}
     .left-pane{display:none}
-    .bottom-bar{display:none}
     .header{padding:0 8px}
-    .hdr-right{display:none!important}
-    body{font-size:12px;padding-bottom:52px}
+    .hdr-right .hdr-btn{display:none}
+    .hdr-right .hdr-btn.mob-show{display:inline-block}
+    body{font-size:12px}
     .kpi-row{grid-template-columns:repeat(3,1fr)}
     .kpi .val{font-size:22px}
     .tp-bar{height:18px}
     .uc{padding:10px;margin-bottom:6px}
     .uc-name{font-size:13px}
     .act-btn{padding:10px;font-size:11px}
+    .view-tabs{overflow-x:auto}
+    .vtab{padding:10px 16px;font-size:11px}
     .speed-hdr{font-size:22px}
-    #mob-uplinks-wrap{display:block!important}
-    #mob-log-wrap{display:block!important}
-    #mob-toolbar{display:flex!important}
-    #mob-drawer{display:block!important}
-    .view-content{padding-bottom:60px}
 }
 @media(max-width:480px){
     .kpi-row{grid-template-columns:repeat(2,1fr)}
     .diag-grid{grid-template-columns:1fr}
 }
-
-/* Mobile toolbar + drawer */
-#mob-toolbar{display:none;position:fixed;bottom:0;left:0;right:0;height:48px;background:var(--panel);border-top:2px solid var(--border);z-index:9990;align-items:center;justify-content:space-around;padding:0 8px;gap:4px}
-#mob-toolbar button{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;flex:1;max-width:80px;text-align:center}
-#mob-toolbar button.active{border-color:var(--blue);color:var(--blue)}
-#mob-drawer{display:none;position:fixed;bottom:48px;left:0;right:0;max-height:60vh;background:var(--panel);border-top:2px solid var(--blue);z-index:9989;overflow-y:auto;padding:8px;transform:translateY(100%);transition:transform .3s ease}
-#mob-drawer.open{transform:translateY(0)}
-#mob-drawer .drawer-section{margin-bottom:8px}
-#mob-drawer .drawer-title{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--blue);text-transform:uppercase;margin-bottom:4px}
-#mob-drawer .mob-act-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
-#mob-drawer .mob-act-btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:4px;font-family:inherit;font-size:11px;cursor:pointer;text-align:center}
-#mob-drawer .mob-act-btn:active{background:var(--blue);color:var(--bg)}
-#mob-uplinks-wrap{display:none}
-#mob-log-wrap{display:none}
-#mob-log-wrap .log-content{max-height:300px;overflow-y:auto}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -370,26 +352,6 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
             </div>
         </div>
 
-
-        <!-- MOBILE UPLINKS (phone only) -->
-        <div id="mob-uplinks-wrap">
-            <div class="acc-hdr" onclick="toggleAcc(this,'mobileup')">UPLINKS <span class="arrow">&#9660;</span></div>
-            <div class="vp" id="view-mobileup">
-                <div id="uplinks-list-mobile"></div>
-                <div style="margin-top:4px">
-                    <div style="font-size:8px;color:var(--muted);letter-spacing:1px;font-weight:700;margin-bottom:3px">FORCE ACTIVE</div>
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:3px">
-                        <button class="act-btn" onclick="forceActive('fa')">FA</button>
-                        <button class="act-btn" onclick="forceActive('fb')">FB</button>
-                        <button class="act-btn" onclick="forceActive('sl_a')">SL_A</button>
-                        <button class="act-btn" onclick="forceActive('sl_b')">SL_B</button>
-                        <button class="act-btn" onclick="forceActive('cell_a')">CELL_A</button>
-                        <button class="act-btn" onclick="forceActive('cell_b')">CELL_B</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- MOBILE VIEW -->
         <div class="acc-hdr" onclick="toggleAcc(this,'mobile')">MOBILE / GPS <span class="arrow">▼</span></div>
         <div class="vp" id="view-mobile">
@@ -460,21 +422,6 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
         </div>
     </div>
 </div>
-
-
-        <!-- MOBILE EVENT LOG (phone only) -->
-        <div id="mob-log-wrap">
-            <div class="acc-hdr" onclick="toggleAcc(this,'moblog')">EVENT LOG <span class="arrow">&#9660;</span></div>
-            <div class="vp" id="view-moblog">
-                <div class="log-controls" style="display:flex;gap:4px;margin-bottom:4px">
-                    <button class="log-btn active" onclick="filterLog('all',this)">All</button>
-                    <button class="log-btn" onclick="filterLog('switch',this)">Switch</button>
-                    <button class="log-btn" onclick="filterLog('trigger',this)">Trigger</button>
-                    <button class="log-btn" onclick="filterLog('warn',this)">Warn</button>
-                </div>
-                <div class="log-content" id="mob-log-content"><div class="log-inner" id="mob-log-inner"></div></div>
-            </div>
-        </div>
 
 <!-- ═══ BOTTOM — EVENT LOG ═══ -->
 <div class="bottom-bar">
@@ -688,7 +635,7 @@ function updateDashboard(s){
     if(s.last_cmd) document.getElementById('cmd-badge').textContent=s.last_cmd.detail||s.last_cmd.result||'--';
 
     // Uplinks
-    window._ecmpMode=(s.mode==="ECMP");window._ecmpMask=s.ecmp_mask||0;renderUplinks(s.uplinks||[],au);syncMobileUplinks();syncMobileLog();
+    window._ecmpMode=(s.mode==="ECMP");window._ecmpMask=s.ecmp_mask||0;renderUplinks(s.uplinks||[],au);
 
     // KPIs
     const avail=(s.uplinks||[]).filter(u=>u.enabled&&u.available);
@@ -995,36 +942,5 @@ w.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:
 document.body.appendChild(w);lhLoad('1h');}
 async function lhLoad(p){const ms=p==='1h'?3600000:p==='6h'?21600000:86400000;const now=new Date();try{const r=await fetch(`/api/log/query?start=${new Date(now-ms).toISOString()}&end=${now.toISOString()}&type=all&limit=500`);const d=await r.json();const b=document.getElementById('logh-body');if(b){if(!d.events?.length){b.innerHTML='<div style="color:var(--muted);padding:16px;text-align:center">No events</div>';return;}b.innerHTML=d.events.map(e=>{const c=e.type==='switch'?'var(--yellow)':e.type==='trigger'?'var(--red)':'var(--muted)';return`<div style="padding:2px 0;border-bottom:1px solid var(--border);display:flex;gap:6px"><span style="color:var(--muted);min-width:120px">${(e.server_time||'').replace('T',' ').slice(0,19)}</span><span style="color:${c};min-width:50px;font-weight:bold">${(e.type||'info').toUpperCase()}</span><span>${e.message||''}</span></div>`;}).join('');b.scrollTop=b.scrollHeight;}}catch(e){console.error(e);}}
 </script>
-
-<!-- ═══ MOBILE TOOLBAR ═══ -->
-<div id="mob-toolbar">
-    <button onclick="chaosFloat()">🎲</button>
-    <button onclick="toggleEcmp()">⚙️</button>
-    <button onclick="flowFloat()">📡</button>
-    <button onclick="logHistFloat()">📋</button>
-    <button id="mob-ham" onclick="toggleDrawer()">☰</button>
-</div>
-<div id="mob-drawer">
-    <div class="drawer-section">
-        <div class="drawer-title">Force Active</div>
-        <div class="mob-act-grid">
-            <button class="mob-act-btn" onclick="forceActive('fa');toggleDrawer()">FA</button>
-            <button class="mob-act-btn" onclick="forceActive('fb');toggleDrawer()">FB</button>
-            <button class="mob-act-btn" onclick="forceActive('sl_a');toggleDrawer()">SL_A</button>
-            <button class="mob-act-btn" onclick="forceActive('sl_b');toggleDrawer()">SL_B</button>
-            <button class="mob-act-btn" onclick="forceActive('cell_a');toggleDrawer()">CELL_A</button>
-            <button class="mob-act-btn" onclick="forceActive('cell_b');toggleDrawer()">CELL_B</button>
-        </div>
-    </div>
-    <div class="drawer-section">
-        <div class="drawer-title">Tools</div>
-        <div class="mob-act-grid">
-            <button class="mob-act-btn" onclick="llmFloat();toggleDrawer()">⚡ LLM</button>
-            <a class="mob-act-btn" href="/diag/" target="_blank" style="text-decoration:none;color:var(--text)">🔍 Diag</a>
-            <button class="mob-act-btn" onclick="toggleDrawer()">✕ Close</button>
-        </div>
-    </div>
-</div>
-
 </body>
 </html>
