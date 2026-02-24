@@ -36,6 +36,7 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
 .mode-training{background:rgba(0,212,255,.15);color:var(--blue);border:1px solid var(--blue)}
 .mode-tripwire{background:rgba(255,170,0,.15);color:var(--yellow);border:1px solid var(--yellow)}
 .mode-mirror{background:rgba(0,255,136,.15);color:var(--green);border:1px solid var(--green)}
+.mode-ecmp{background:rgba(0,212,255,.15);color:var(--blue);border:1px solid var(--blue);animation:pulse 1.5s infinite}
 .st-normal{background:rgba(0,255,136,.08);color:var(--green)}
 .st-prepare,.st-prepare{background:rgba(255,170,0,.1);color:var(--yellow);animation:pulse 1.5s infinite}
 .st-protect{background:rgba(255,102,0,.12);color:var(--orange);animation:pulse .8s infinite}
@@ -254,6 +255,27 @@ body{font-family:'SF Mono','Fira Code','Consolas',monospace;background:var(--bg)
             <button class="act-btn" onclick="switchController(0)">CTRL-A</button>
             <button class="act-btn" onclick="switchController(1)">CTRL-B</button>
             <button class="act-btn" onclick="clearForce()">AUTO</button>
+            <div style="margin-top:6px;padding:6px;background:var(--card);border:1px solid var(--border);border-radius:4px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                    <span style="font-size:8px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)">ECMP STRIPING</span>
+                    <div id="ecmp-toggle" class="tog" onclick="toggleEcmp()" title="Master ECMP toggle"></div>
+                </div>
+                <div id="ecmp-links" style="display:flex;flex-wrap:wrap;gap:3px">
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="fa" checked style="accent-color:var(--green)"> FA</label>
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="fb" checked style="accent-color:var(--green)"> FB</label>
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="sl_a" style="accent-color:var(--sl-blue)"> SL_A</label>
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="sl_b" style="accent-color:var(--sl-blue)"> SL_B</label>
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="cell_a" style="accent-color:var(--tmo-magenta)"> CELL_A</label>
+                    <label class="ecmp-cb" style="display:flex;align-items:center;gap:3px;font-size:9px;cursor:pointer;padding:2px 5px;background:var(--panel);border-radius:3px;border:1px solid var(--border)">
+                        <input type="checkbox" class="ecmp-link" value="cell_b" style="accent-color:var(--att-blue)"> CELL_B</label>
+                </div>
+                <div id="ecmp-status" style="font-size:8px;color:var(--muted);margin-top:3px">OFF</div>
+            </div>
         </div>
     </div>
 
@@ -542,6 +564,21 @@ function drawChart(){
 function updateDashboard(s){
     const modeBadge=document.getElementById('badge-mode');
     modeBadge.textContent=s.mode;modeBadge.className='badge mode-'+s.mode.toLowerCase();
+    /* ECMP status sync */
+    if(Date.now()>ecmpCooldown){
+        const ecmpSt=document.getElementById("ecmp-status");
+        const ecmpTog=document.getElementById("ecmp-toggle");
+        if(s.mode==="ECMP"&&s.ecmp_mask>0){
+            if(!ecmpActive){ecmpActive=true;ecmpTog.classList.add("on");}
+            const names=["cell_a","cell_b","sl_a","sl_b","fa","fb"];
+            const active=names.filter((_,i)=>s.ecmp_mask&(1<<i));
+            ecmpSt.textContent="ACTIVE: "+active.join("+").toUpperCase();
+            ecmpSt.style.color="var(--green)";
+        }else if(s.mode!=="ECMP"){
+            if(ecmpActive){ecmpActive=false;ecmpTog.classList.remove("on");}
+            ecmpSt.textContent="OFF";ecmpSt.style.color="var(--muted)";
+        }
+    }
     const stateBadge=document.getElementById('badge-state');
     stateBadge.textContent=s.state;stateBadge.className='badge st-'+s.state.toLowerCase();
     const dupB=document.getElementById('badge-dup');
@@ -650,6 +687,33 @@ function checkChanges(s){
 async function toggleUplink(name){_lock=Date.now()+2000;const r=await fetch('/api/uplink/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});const d=await r.json();const card=document.querySelector(`.uc[data-name="${name}"]`);if(card){const t=card.querySelector('.tog');if(t)t.classList.toggle('on',d.enabled);card.style.opacity=d.enabled?'1':'0.35';}}
 async function forceActive(name){await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:name})});addLog('switch','Force → '+name.toUpperCase());}
 async function clearForce(){await fetch('/api/control/force',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uplink:'auto'})});addLog('info','Cleared force → AUTO');}
+let ecmpActive=false;let ecmpCooldown=0;
+async function toggleEcmp(){
+    ecmpActive=!ecmpActive;
+    const tog=document.getElementById("ecmp-toggle");
+    if(ecmpActive){
+        const checks=document.querySelectorAll(".ecmp-link:checked");
+        const uplinks=[...checks].map(c=>c.value);
+        if(uplinks.length<2){addLog("info","ECMP needs 2+ links");ecmpActive=false;tog.classList.remove("on");return;}
+        tog.classList.add("on");
+        ecmpCooldown=Date.now()+5000;await fetch("/api/control/ecmp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,uplinks:uplinks})});
+        addLog("info","ECMP ON: "+uplinks.join("+").toUpperCase());
+    }else{
+        tog.classList.remove("on");
+        ecmpCooldown=Date.now()+5000;await fetch("/api/control/ecmp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:false})});
+        addLog("info","ECMP OFF → TRIPWIRE");
+    }
+}
+document.querySelectorAll(".ecmp-link").forEach(cb=>{
+    cb.addEventListener("change",async function(){
+        if(!ecmpActive)return;
+        const checks=document.querySelectorAll(".ecmp-link:checked");
+        const uplinks=[...checks].map(c=>c.value);
+        if(uplinks.length<2){addLog("info","ECMP needs 2+ links");return;}
+        ecmpCooldown=Date.now()+5000;await fetch("/api/control/ecmp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled:true,uplinks:uplinks})});
+        addLog("info","ECMP updated: "+uplinks.join("+").toUpperCase());
+    });
+});
 async function switchController(c){await fetch('/api/control/controller',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({controller:c})});addLog('switch','Controller → '+(c===0?'A':'B'));}
 
 // ─── WG Tunnels with live throughput ───

@@ -713,3 +713,23 @@ if __name__ == '__main__':
     os.makedirs('/run/pathsteer', exist_ok=True)
     os.makedirs('/opt/pathsteer/data/logs', exist_ok=True)
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+
+@app.route('/api/control/ecmp', methods=['POST'])
+def api_ecmp():
+    """Set ECMP mode with selected uplinks"""
+    data = request.get_json()
+    enabled = data.get('enabled', False)
+    uplinks = data.get('uplinks', [])
+    
+    if not enabled:
+        send_command('mode:tripwire')
+        return jsonify({'status': 'ok', 'mode': 'tripwire'})
+    
+    if len(uplinks) < 2:
+        return jsonify({'error': 'Need at least 2 uplinks for ECMP'}), 400
+    
+    # Map GUI names to daemon names
+    mapped = [map_uplink(u) for u in uplinks]
+    cmd = 'ecmp:' + ','.join(mapped)
+    send_command(cmd)
+    return jsonify({'status': 'ok', 'mode': 'ecmp', 'uplinks': mapped})
