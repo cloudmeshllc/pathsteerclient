@@ -993,7 +993,7 @@ static void execute_switch(uplink_id_t target) {
     system(cmd);
     /* Step 3: Switch controller return route (async, don't block) */
     snprintf(cmd, sizeof(cmd),
-        "/opt/pathsteer/scripts/controller-route-switch.sh %s &",
+        "/bin/bash /opt/pathsteer/scripts/controller-route-switch.sh %s &",
         UPLINK_NAMES[target]);
     system(cmd);
     
