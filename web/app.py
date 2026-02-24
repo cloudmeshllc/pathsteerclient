@@ -727,11 +727,6 @@ def api_log_status_json():
         return jsonify({})
 
 app.register_blueprint(diag_bp, url_prefix='/diag')
-if __name__ == '__main__':
-    # Ensure directories exist
-    os.makedirs('/run/pathsteer', exist_ok=True)
-    os.makedirs('/opt/pathsteer/data/logs', exist_ok=True)
-    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
 
 @app.route('/api/control/ecmp', methods=['POST'])
 def api_ecmp():
@@ -748,7 +743,14 @@ def api_ecmp():
         return jsonify({'error': 'Need at least 2 uplinks for ECMP'}), 400
     
     # Map GUI names to daemon names
-    mapped = [map_uplink(u) for u in uplinks]
+    mapped = uplinks  # daemon uses fa, fb, sl_a etc directly
     cmd = 'ecmp:' + ','.join(mapped)
     send_command(cmd)
     return jsonify({'status': 'ok', 'mode': 'ecmp', 'uplinks': mapped})
+
+if __name__ == '__main__':
+    # Ensure directories exist
+    os.makedirs('/run/pathsteer', exist_ok=True)
+    os.makedirs('/opt/pathsteer/data/logs', exist_ok=True)
+    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+
