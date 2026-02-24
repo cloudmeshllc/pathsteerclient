@@ -145,11 +145,10 @@
 typedef enum {
     MODE_TRAINING = 0,
     MODE_TRIPWIRE,
-    MODE_MIRROR,
-    MODE_ECMP
+    MODE_MIRROR
 } op_mode_t;
 
-static const char* MODE_NAMES[] = {"TRAINING", "TRIPWIRE", "MIRROR", "ECMP"};
+static const char* MODE_NAMES[] = {"TRAINING", "TRIPWIRE", "MIRROR"};
 
 /*-----------------------------------------------------------------------------
  * System States
@@ -362,11 +361,6 @@ typedef struct {
     
     /* Run tracking */
     char            run_id[64];
-    
-    /* ECMP state */
-    uint8_t         ecmp_mask;          /* Bitmask: active uplinks in ECMP group */
-    uint8_t         ecmp_requested;     /* Bitmask: operator-requested set */
-    bool            ecmp_auto;          /* true = all healthy, false = manual set */
 } status_t;
 
 /*-----------------------------------------------------------------------------
@@ -477,7 +471,6 @@ static int dup_disable(void);
 static void slowpath_arbitrate(void);
 static uplink_id_t select_best_uplink(void);
 static void execute_switch(uplink_id_t target);
-static void execute_ecmp(uint8_t mask);
 
 /* Protection mode */
 static void protection_tick(void);
@@ -1016,99 +1009,6 @@ static void execute_switch(uplink_id_t target) {
     log_event("switch_ok", "{\"from\":\"%s\",\"to\":\"%s\",\"vip_dev\":\"%s\"}",
               UPLINK_NAMES[old], UPLINK_NAMES[target], VIP_DEVS[target]);
 }
-
-/*-----------------------------------------------------------------------------
- * execute_ecmp() - Set multi-nexthop ECMP routes across active uplinks
- * mask: bitmask of uplinks to include (bit 0 = cell_a, bit 5 = fb)
- *---------------------------------------------------------------------------*/
-static void execute_ecmp(uint8_t mask) {
-    char cmd[1024];
-    char v4_nhops[512] = "";
-    char v6_nhops[512] = "";
-    char ctrl_v4[512] = "";
-    char ctrl_v6[512] = "";
-    int count = 0;
-
-    static const char* SVC_DEVS[] = {
-        "svc_ca", "svc_cb", "svc_sl_a", "svc_sl_b", "svc_fa", "svc_fb"
-    };
-    static const char* SVC_GWS[] = {
-        "10.203.5.2", "10.203.6.2", "10.203.3.2", "10.203.4.2", "10.203.1.2", "10.203.2.2"
-    };
-    static const char* OUTER_DEVS[] = {
-        "outer_ca", "outer_cb", "outer_sl_a", "outer_sl_b", "outer_fa", "outer_fb"
-    };
-    static const char* OUTER_GWS6[] = {
-        "fd10:ca::2", "fd10:cb::2", "fd10:a1::2", "fd10:b1::2", "fd10:fa::2", "fd10:fb::2"
-    };
-
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        if (!(mask & (1 << i))) continue;
-        if (!g_uplinks[i].enabled || !g_uplinks[i].available) continue;
-
-        char tmp[128];
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", VIP_GWS[i], VIP_DEVS[i]);
-        strncat(v4_nhops, tmp, sizeof(v4_nhops) - strlen(v4_nhops) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", VIP_GWS6[i], VIP_DEVS[i]);
-        strncat(v6_nhops, tmp, sizeof(v6_nhops) - strlen(v6_nhops) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", SVC_GWS[i], SVC_DEVS[i]);
-        strncat(ctrl_v4, tmp, sizeof(ctrl_v4) - strlen(ctrl_v4) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", OUTER_GWS6[i], OUTER_DEVS[i]);
-        strncat(ctrl_v6, tmp, sizeof(ctrl_v6) - strlen(ctrl_v6) - 1);
-
-        count++;
-    }
-
-    if (count == 0) {
-        log_event("ecmp_fail", "{\"reason\":\"no_healthy_uplinks\"}");
-        return;
-    }
-
-    if (count == 1) {
-        for (int i = 0; i < UPLINK_COUNT; i++) {
-            if ((mask & (1 << i)) && g_uplinks[i].enabled && g_uplinks[i].available) {
-                execute_switch(i);
-                return;
-            }
-        }
-    }
-
-    snprintf(cmd, sizeof(cmd), "ip netns exec ns_vip ip route replace default%s", v4_nhops);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd), "ip netns exec ns_vip ip -6 route replace default%s", v6_nhops);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd),
-        "/bin/bash -c 'ssh -o BatchMode=yes -o ConnectTimeout=3 pathsteer@104.204.136.13 "
-        "\"sudo ip netns exec ns_svc ip route replace 104.204.138.48/28%s\"' &",
-        ctrl_v4);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd),
-        "/bin/bash -c 'ssh -o BatchMode=yes -o ConnectTimeout=3 pathsteer@104.204.136.13 "
-        "\"sudo ip -6 route replace 2602:f644:10::/56%s\"' &",
-        ctrl_v6);
-    system(cmd);
-
-    pthread_mutex_lock(&g_mutex);
-    g_status.ecmp_mask = mask;
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        g_uplinks[i].is_active = (mask & (1 << i)) ? true : false;
-    }
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        if ((mask & (1 << i)) && g_uplinks[i].enabled && g_uplinks[i].available) {
-            g_status.active_uplink = i;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&g_mutex);
-
-    log_event("ecmp_set", "{\"mask\":%d,\"count\":%d}", mask, count);
-}
 /*=============================================================================
  * PROTECTION MODE TICK
  * 
@@ -1521,7 +1421,6 @@ static void status_write(void) {
     
     fprintf(fp, "{\n");
     fprintf(fp, "  \"mode\": \"%s\",\n", MODE_NAMES[g_status.mode]);
-    fprintf(fp, "  \"ecmp_mask\": %d,\n", g_status.ecmp_mask);
     fprintf(fp, "  \"state\": \"%s\",\n", STATE_NAMES[g_status.state]);
     fprintf(fp, "  \"trigger\": \"%s\",\n", TRIGGER_NAMES[g_status.last_trigger]);
     fprintf(fp, "  \"trigger_detail\": \"%s\",\n", g_status.trigger_detail);
@@ -1597,17 +1496,6 @@ static void process_one_command(const char* cmd, const char* cmd_id) {
                 g_status.mode = MODE_TRIPWIRE;
             } else if (strcmp(mode, "mirror") == 0) {
                 g_status.mode = MODE_MIRROR;
-            } else if (strcmp(mode, "ecmp") == 0) {
-                g_status.mode = MODE_ECMP;
-                g_status.ecmp_auto = true;
-                uint8_t mask = 0;
-                for (int i = 0; i < UPLINK_COUNT; i++) {
-                    if (g_uplinks[i].enabled && g_uplinks[i].available) mask |= (1 << i);
-                }
-                g_status.ecmp_mask = mask;
-                g_status.ecmp_requested = mask;
-                g_status.force_locked = false;
-                execute_ecmp(mask);
                 dup_enable("br-lan", g_uplinks[1].veth);  /* Always dup in mirror */
             }
             log_event("mode_change", "{\"mode\":\"%s\"}", MODE_NAMES[g_status.mode]);
@@ -1646,35 +1534,6 @@ static void process_one_command(const char* cmd, const char* cmd_id) {
             snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "force=%s", uplink);
             } /* end else (not auto) */
             
-        } else if (strncmp(cmd, "ecmp:", 5) == 0) {
-            const char* list = cmd + 5;
-            uint8_t mask = 0;
-            char buf[128];
-            strncpy(buf, list, sizeof(buf) - 1);
-            buf[sizeof(buf) - 1] = '\0';
-            char* tok = strtok(buf, ",");
-            while (tok) {
-                for (int i = 0; i < UPLINK_COUNT; i++) {
-                    if (strcmp(UPLINK_NAMES[i], tok) == 0) {
-                        mask |= (1 << i);
-                        break;
-                    }
-                }
-                tok = strtok(NULL, ",");
-            }
-            if (mask && __builtin_popcount(mask) >= 2) {
-                g_status.mode = MODE_ECMP;
-                g_status.ecmp_auto = false;
-                g_status.ecmp_mask = mask;
-                g_status.ecmp_requested = mask;
-                g_status.force_locked = false;
-                execute_ecmp(mask);
-                strcpy(g_last_cmd_result, "exec");
-                snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "ecmp=0x%02x", mask);
-            } else {
-                strcpy(g_last_cmd_result, "fail");
-                snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "ecmp_need_2+_uplinks");
-            }
         } else if (strcmp(cmd, "trigger") == 0) {
             tripwire_fire(TRIGGER_MANUAL, "operator");
             strcpy(g_last_cmd_result, "exec");
@@ -2040,34 +1899,9 @@ int main(int argc, char** argv) {
             switch (g_status.state) {
                 case STATE_NORMAL:
                 case STATE_PREPARE: {
-                    /* ECMP recovery: re-add healthy uplinks that were removed */
-                    if (g_status.mode == MODE_ECMP && g_status.ecmp_mask) {
-                        uint8_t target = g_status.ecmp_auto ? 0x3F : g_status.ecmp_requested;
-                        uint8_t new_mask = 0;
-                        for (int i = 0; i < UPLINK_COUNT; i++) {
-                            if (!(target & (1 << i))) continue;
-                            if (g_uplinks[i].enabled && g_uplinks[i].available &&
-                                g_uplinks[i].rtt_ms > 0 && g_uplinks[i].loss_pct < 20.0) {
-                                new_mask |= (1 << i);
-                            }
-                        }
-                        if (new_mask != g_status.ecmp_mask && new_mask && __builtin_popcount(new_mask) >= 2) {
-                            execute_ecmp(new_mask);
-                        }
-                    }
                     uplink_t* active = &g_uplinks[g_status.active_uplink];
                     trigger_t t = tripwire_check(active);
                     if (t != TRIGGER_NONE) {
-                        /* ECMP mode: remove degraded link instead of full switch */
-                        if (g_status.mode == MODE_ECMP && g_status.ecmp_mask) {
-                            uint8_t new_mask = g_status.ecmp_mask & ~(1 << g_status.active_uplink);
-                            if (new_mask) {
-                                log_event("ecmp_degrade", "{\"removed\":\"%s\",\"mask\":%d}",
-                                    UPLINK_NAMES[g_status.active_uplink], new_mask);
-                                execute_ecmp(new_mask);
-                                break;
-                            }
-                        }
                         tripwire_fire(t, TRIGGER_NAMES[t]);
                     }
                     break;
