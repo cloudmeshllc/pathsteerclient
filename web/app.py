@@ -70,19 +70,24 @@ def get_throughput():
         if iface.startswith("vip_"):
             fields = data.split()
             curr[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
-    # Use vip_wifi_i: TX=download (to clients), RX=upload (from clients)
-    wifi = curr.get('vip_wifi_i')
-    if wifi:
-        total_rx = wifi['tx']   # download = TX towards WiFi clients
-        total_tx = wifi['rx']   # upload = RX from WiFi clients
-    else:
-        total_rx = sum(v["rx"] for v in curr.values())
-        total_tx = sum(v["tx"] for v in curr.values())
+
+    # vip_wifi_i is the measurement point: all client traffic passes through it
+    # TX on wifi = download TO clients, RX on wifi = upload FROM clients
+    wifi = curr.get('vip_wifi_i', {})
+    cur_down = wifi.get('tx', 0)
+    cur_up = wifi.get('rx', 0)
+
+    prev_wifi = _prev_bytes.get('vip_wifi_i', {})
+    prev_down = prev_wifi.get('tx', 0)
+    prev_up = prev_wifi.get('rx', 0)
+
     dt = now - _prev_time if _prev_time > 0 else 1
-    prev_rx = sum(v.get("rx", 0) for v in _prev_bytes.values())
-    prev_tx = sum(v.get("tx", 0) for v in _prev_bytes.values())
-    down_mbps = ((total_rx - prev_rx) * 8 / dt / 1000000) if _prev_time > 0 else 0
-    up_mbps = ((total_tx - prev_tx) * 8 / dt / 1000000) if _prev_time > 0 else 0
+    if dt < 0.05:
+        dt = 0.1  # avoid division spikes
+
+    down_mbps = ((cur_down - prev_down) * 8 / dt / 1_000_000) if _prev_time > 0 and cur_down >= prev_down else 0
+    up_mbps = ((cur_up - prev_up) * 8 / dt / 1_000_000) if _prev_time > 0 and cur_up >= prev_up else 0
+
     _prev_bytes = curr
     _prev_time = now
     return max(0, round(down_mbps, 2)), max(0, round(up_mbps, 2))
@@ -98,6 +103,20 @@ def get_status():
             down, up = get_throughput()
             status["throughput_down_mbps"] = down
             status["throughput_up_mbps"] = up
+            # Calculate uptime from run_id
+            run_id = status.get("run_id", "")
+            if run_id:
+                try:
+                    from datetime import datetime
+                    start = datetime.strptime(run_id, "%Y%m%d_%H%M%S")
+                    delta = datetime.utcnow() - start
+                    total_min = int(delta.total_seconds() // 60)
+                    if total_min >= 0:
+                        status["uptime_display"] = f"{total_min // 60}h {total_min % 60}m"
+                    else:
+                        status["uptime_display"] = "--"
+                except:
+                    status["uptime_display"] = "--"
             status['topology_mode'] = config.get('topology_mode', 'chaos')
             # Merge GPS data
             try:
