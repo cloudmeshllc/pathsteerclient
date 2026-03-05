@@ -1,19 +1,42 @@
 #!/bin/bash
-# Cellular signal polling using QMI proxy (safe, no CID management)
+###############################################################################
+# cellular-monitor.sh - Poll cellular signal metrics via qmicli
+#
+# Usage:
+#   cellular-monitor.sh poll <dev_num> <name>
+#   cellular-monitor.sh status
+###############################################################################
+
+CMD="${1:-status}"
+DEV_NUM="${2:-0}"
+NAME="${3:-cell_a}"
 
 poll_signal() {
-    local dev=$1
-    timeout 5 qmicli -d "$dev" -p --nas-get-signal-strength 2>/dev/null
+    local cdc="/dev/cdc-wdm${DEV_NUM}"
+    
+    if [[ ! -c "$cdc" ]]; then
+        echo "Device not found: $cdc"
+        return 1
+    fi
+    
+    # Get signal strength via qmicli
+    qmicli -d "$cdc" --nas-get-signal-strength 2>/dev/null
 }
 
-case "$1" in
+case "$CMD" in
     poll)
-        poll_signal "/dev/cdc-wdm${2:-0}"
+        poll_signal
         ;;
     status)
-        echo "Using QMI proxy mode (no CID tracking)"
+        echo "Cellular Monitor"
+        for i in 0 1; do
+            if [[ -c "/dev/cdc-wdm${i}" ]]; then
+                echo "  cdc-wdm${i}: present"
+            fi
+        done
         ;;
     *)
-        echo "Usage: $0 {poll|status} [dev_num]"
+        echo "Usage: $0 {poll <dev_num> <name>|status}"
+        exit 1
         ;;
 esac

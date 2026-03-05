@@ -57,7 +57,6 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
-#include <dirent.h>
 
 #include <sqlite3.h>
 #include <curl/curl.h>
@@ -107,14 +106,11 @@
  * CLEAN_EXIT: Need this many seconds of "clean" before exiting protection
  */
 #define DEFAULT_PREROLL_MS          500
-#define DEFAULT_MIN_HOLD_SEC        3
-#define DEFAULT_CLEAN_EXIT_SEC      2
+#define DEFAULT_MIN_HOLD_SEC        8
+#define DEFAULT_CLEAN_EXIT_SEC      5
 
 /* Risk output interval (how often prediction engine runs) */
 #define RISK_INTERVAL_MS            250
-
-/* Duplication settle time: wait at least this long after dup_enable before switching */
-#define DUP_SETTLE_MS               50
 
 /* Status file update interval */
 #define STATUS_INTERVAL_MS          100
@@ -145,11 +141,10 @@
 typedef enum {
     MODE_TRAINING = 0,
     MODE_TRIPWIRE,
-    MODE_MIRROR,
-    MODE_ECMP
+    MODE_MIRROR
 } op_mode_t;
 
-static const char* MODE_NAMES[] = {"TRAINING", "TRIPWIRE", "MIRROR", "ECMP"};
+static const char* MODE_NAMES[] = {"TRAINING", "TRIPWIRE", "MIRROR"};
 
 /*-----------------------------------------------------------------------------
  * System States
@@ -199,7 +194,7 @@ typedef enum {
 } uplink_id_t;
 
 static const char* UPLINK_NAMES[] = {
-    "cell_a", "cell_b", "sl_a", "sl_b", "fa", "fb"
+    "cell_a", "cell_b", "sl_a", "sl_b", "fiber1", "fiber2"
 };
 
 /*-----------------------------------------------------------------------------
@@ -337,13 +332,11 @@ typedef struct {
     
     /* Active paths */
     uplink_id_t     active_uplink;
-    bool            force_locked;       /* Operator force — suppresses auto-switch */
     int             active_controller;  /* 0 = ctrl_a, 1 = ctrl_b */
     
     /* Duplication state */
     bool            dup_enabled;
     int64_t         dup_enabled_at_us;
-    int64_t         dup_engaged_at_us;   /* When dup was confirmed engaged (after settle) */
     
     /* Timers */
     int64_t         protect_start_us;
@@ -362,11 +355,6 @@ typedef struct {
     
     /* Run tracking */
     char            run_id[64];
-    
-    /* ECMP state */
-    uint8_t         ecmp_mask;          /* Bitmask: active uplinks in ECMP group */
-    uint8_t         ecmp_requested;     /* Bitmask: operator-requested set */
-    bool            ecmp_auto;          /* true = all healthy, false = manual set */
 } status_t;
 
 /*-----------------------------------------------------------------------------
@@ -430,11 +418,6 @@ static sqlite3*                 g_db = NULL;        /* Training database */
 static FILE*                    g_logfile = NULL;   /* JSONL log */
 static pthread_mutex_t          g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/* Last command result (for status.json) */
-static char g_last_cmd_id[64] = "";
-static char g_last_cmd_result[32] = "";
-static char g_last_cmd_detail[128] = "";
-
 /*=============================================================================
  * FUNCTION DECLARATIONS (implemented below)
  *===========================================================================*/
@@ -465,10 +448,6 @@ static trigger_t tripwire_check(uplink_t* active);
 static void tripwire_fire(trigger_t reason, const char* detail);
 
 /* Duplication control */
-/* Forward declare VIP arrays (defined in execute_switch section) */
-static const char* VIP_DEVS[];
-static const char* VIP_GWS[];
-
 static int dup_init(void);
 static int dup_enable(const char* src_veth, const char* dst_veth);
 static int dup_disable(void);
@@ -477,7 +456,6 @@ static int dup_disable(void);
 static void slowpath_arbitrate(void);
 static uplink_id_t select_best_uplink(void);
 static void execute_switch(uplink_id_t target);
-static void execute_ecmp(uint8_t mask);
 
 /* Protection mode */
 static void protection_tick(void);
@@ -653,51 +631,40 @@ static int config_load(const char* path) {
 
 static int dup_init(void) {
     /*
-     * Initialize nftables duplication infrastructure in ns_vip.
-     * Clean any stale dup_table from previous run.
+     * Install base qdisc on br-lan.
+     * We use fq_codel for bufferbloat control.
+     * Duplication rules will be added per-veth as needed.
      */
-    log_info("Installing duplication infrastructure (nftables in ns_vip)");
+    log_info("Installing duplication infrastructure");
     
-    system("ip netns exec ns_vip nft delete table ip dup_table 2>/dev/null");
+    /* Clear existing rules */
+    system("tc qdisc del dev br-lan root 2>/dev/null");
     
-    log_event("dup_init", "{\"status\":\"ready\",\"method\":\"nftables_dup\"}");
+    /* Add root qdisc with fq_codel for shaping */
+    system("tc qdisc add dev br-lan root handle 1: fq_codel");
+    
+    log_event("dup_init", "{\"status\":\"ready\",\"shaper\":\"fq_codel\"}");
     return 0;
 }
 
 static int dup_enable(const char* src_veth, const char* dst_veth) {
     /*
-     * Enable duplication using nftables dup in ns_vip.
-     * src_veth = active VIP dev (e.g. "vip_fb")
-     * dst_veth = backup VIP dev (e.g. "vip_fa")
-     *
-     * Finds the backup gateway from VIP_GWS array.
-     * Installs: oif <active> dup to <backup_gw> device <backup>
+     * Enable duplication by adding a mirred filter.
+     * This copies ALL packets from src_veth to dst_veth.
+     * 
+     * The filter is added with preference 1 (active).
+     * Disable removes pref 1 and could add pref 999 (inactive).
      */
     int64_t start = now_us();
-    char cmd[1024];
+    char cmd[512];
     
-    /* Find backup gateway from VIP_GWS */
-    const char* backup_gw = NULL;
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        if (strcmp(VIP_DEVS[i], dst_veth) == 0) {
-            backup_gw = VIP_GWS[i];
-            break;
-        }
-    }
-    if (!backup_gw) {
-        log_event("dup_enable_fail", "{\"reason\":\"no_gw_for_%s\"}", dst_veth);
-        return -1;
-    }
-    
-    /* Install nftables dup rule in ns_vip */
-    system("ip netns exec ns_vip nft delete table ip dup_table 2>/dev/null");
-    system("ip netns exec ns_vip nft add table ip dup_table");
-    system("ip netns exec ns_vip nft \"add chain ip dup_table postrouting"
-           " { type filter hook postrouting priority 0 \\; }\"");
+    /* Remove any existing filter for this pair */
     snprintf(cmd, sizeof(cmd),
-        "ip netns exec ns_vip nft add rule ip dup_table postrouting "
-        "oif %s dup to %s device %s",
-        src_veth, backup_gw, dst_veth);
+        "tc filter del dev %s parent 1: pref 1 2>/dev/null; "
+        "tc filter add dev %s parent 1: protocol all pref 1 u32 match u32 0 0 "
+        "action mirred egress mirror dev %s",
+        src_veth, src_veth, dst_veth);
+    
     system(cmd);
     
     int64_t elapsed = now_us() - start;
@@ -705,20 +672,19 @@ static int dup_enable(const char* src_veth, const char* dst_veth) {
     pthread_mutex_lock(&g_mutex);
     g_status.dup_enabled = true;
     g_status.dup_enabled_at_us = now_us();
-    g_status.dup_engaged_at_us = 0;
     pthread_mutex_unlock(&g_mutex);
     
-    log_event("dup_enable", "{\"src\":\"%s\",\"dst\":\"%s\",\"gw\":\"%s\",\"latency_us\":%ld}",
-              src_veth, dst_veth, backup_gw, elapsed);
+    log_event("dup_enable", "{\"src\":\"%s\",\"dst\":\"%s\",\"latency_us\":%ld}",
+              src_veth, dst_veth, elapsed);
     
     return 0;
 }
 
 static int dup_disable(void) {
     /*
-     * Disable duplication by removing nftables dup_table in ns_vip.
+     * Disable all active duplication filters.
      */
-    system("ip netns exec ns_vip nft delete table ip dup_table 2>/dev/null");
+    system("tc filter del dev br-lan parent 1: pref 1 2>/dev/null");
     
     pthread_mutex_lock(&g_mutex);
     g_status.dup_enabled = false;
@@ -786,7 +752,7 @@ static trigger_t tripwire_check(uplink_t* active) {
      * Check 4: Starlink Obstruction (if Starlink uplink)
      */
     if (active->type == UPLINK_TYPE_STARLINK) {
-        if (active->starlink.obstruction_pct > 25.0) {
+        if (active->starlink.obstructed) {
             return TRIGGER_STARLINK_OBSTR;
         }
         /* Also trigger if obstruction predicted within 5 seconds */
@@ -816,7 +782,7 @@ static void tripwire_fire(trigger_t reason, const char* detail) {
     
     /* Enable duplication */
     if (secondary != g_status.active_uplink) {
-        dup_enable(VIP_DEVS[g_status.active_uplink], VIP_DEVS[secondary]);
+        dup_enable(g_uplinks[g_status.active_uplink].veth, g_uplinks[secondary].veth);
     }
     
     /* Update state */
@@ -853,20 +819,6 @@ static void slowpath_arbitrate(void) {
     int64_t now = now_us();
     int64_t elapsed_ms = (now - g_status.protect_start_us) / 1000;
     
-    /* Duplication must be confirmed engaged before we switch.
-     * After dup_enable(), wait DUP_SETTLE_MS for tc mirred to take effect. */
-    if (g_status.dup_enabled && g_status.dup_engaged_at_us == 0) {
-        int64_t dup_age_ms = (now - g_status.dup_enabled_at_us) / 1000;
-        if (dup_age_ms >= DUP_SETTLE_MS) {
-            g_status.dup_engaged_at_us = now;
-            log_event("dup_engaged", "{\"settle_ms\":%ld}", dup_age_ms);
-        } else {
-            /* Still settling — do not proceed to switch */
-            g_status.state = STATE_SWITCHING;
-            return;
-        }
-    }
-    
     /* Still in preroll? */
     if (elapsed_ms < g_config.preroll_ms) {
         g_status.state = STATE_SWITCHING;
@@ -874,7 +826,7 @@ static void slowpath_arbitrate(void) {
     }
     
     /* Already switched this window? */
-    if (g_status.switches_this_window >= 3) {
+    if (g_status.switches_this_window >= 1) {
         g_status.flap_suppressed = true;
         return;
     }
@@ -891,8 +843,6 @@ static void slowpath_arbitrate(void) {
 }
 
 static uplink_id_t select_best_uplink(void) {
-    /* If operator force is active, stay on current uplink */
-    if (g_status.force_locked) return g_status.active_uplink;
     /*
      * Score each available uplink and select the best.
      * Lower RTT, lower risk, lower loss = better score.
@@ -932,79 +882,15 @@ static uplink_id_t select_best_uplink(void) {
     return best;
 }
 
-/*-----------------------------------------------------------------------------
- * Routing table names per uplink (from /etc/iproute2/rt_tables)
- * cell_a → tmo_cA (111), cell_b → att_cA (120)
- * sl_a → sl_a (113), sl_b → sl_b (114)
- * fa → fa (115), fb → fb (116)
- *---------------------------------------------------------------------------*/
-static const char* UPLINK_TABLES[] = {
-    "tmo_cA", "att_cA", "sl_a", "sl_b", "fa", "fb"
-};
-
-#define SERVICE_PREFIX "104.204.136.48/28"
-#define RULE_PRIORITY  "90"
-
-/*-----------------------------------------------------------------------------
- * ns_vip routing: device and gateway per uplink for route switching
- * Daemon does: ip netns exec ns_vip ip route replace default via <GW> dev <DEV>
- *---------------------------------------------------------------------------*/
-static const char* VIP_DEVS[] = {
-    "vip_cell_a", "vip_cell_b", "vip_sl_a", "vip_sl_b", "vip_fa", "vip_fb"
-};
-static const char* VIP_GWS6[] = {
-    "fd10:0:0:5::2", "fd10:0:0:6::2", "fd10:0:0:3::2", "fd10:0:0:4::2", "fd10:0:0:1::2", "fd10:0:0:2::2"
-};
-static const char* VIP_GWS[] = {
-    "10.201.10.18", "10.201.10.22", "10.201.10.10", "10.201.10.14", "10.201.10.2", "10.201.10.6"
-};
-
 static void execute_switch(uplink_id_t target) {
     uplink_id_t old = g_status.active_uplink;
     
-    log_event("switch", "{\"from\":\"%s\",\"to\":\"%s\",\"vip_dev\":\"%s\",\"vip_gw\":\"%s\"}",
-              UPLINK_NAMES[old], UPLINK_NAMES[target], VIP_DEVS[target], VIP_GWS[target]);
+    log_event("switch", "{\"from\":\"%s\",\"to\":\"%s\"}",
+              UPLINK_NAMES[old], UPLINK_NAMES[target]);
     
-    /*
-     * Actuate OS routing: replace default route in ns_vip.
-     * This is the REAL switch — one route change moves all service traffic.
-     */
-    char cmd[512];
+    /* Update routing to use new uplink's veth */
+    /* In V1, this is handled by changing which veth is "primary" */
     
-    /* Step 1: Switch route in ns_vip */
-    snprintf(cmd, sizeof(cmd),
-        "ip netns exec ns_vip ip route replace default via %s dev %s",
-        VIP_GWS[target], VIP_DEVS[target]);
-    
-    int ret = system(cmd);
-    
-    /* Step 2: Verify actuation succeeded */
-    char verify_cmd[512];
-    snprintf(verify_cmd, sizeof(verify_cmd),
-        "ip netns exec ns_vip ip route show default | grep -q 'via %s dev %s'",
-        VIP_GWS[target], VIP_DEVS[target]);
-    
-    int verify = system(verify_cmd);
-    
-    if (verify != 0) {
-        /* Actuation FAILED — do NOT update active_uplink */
-        log_event("switch_fail", "{\"target\":\"%s\",\"vip_dev\":\"%s\",\"reason\":\"ns_vip_route_verify_failed\",\"ret\":%d}",
-                  UPLINK_NAMES[target], VIP_DEVS[target], ret);
-        return;
-    }
-    
-    /* Step 2b: Switch IPv6 default route in ns_vip */
-    snprintf(cmd, sizeof(cmd),
-        "ip netns exec ns_vip ip -6 route replace default via %s dev %s src 2602:f644:10:1::50",
-        VIP_GWS6[target], VIP_DEVS[target]);
-    system(cmd);
-    /* Step 3: Switch controller return route (async, don't block) */
-    snprintf(cmd, sizeof(cmd),
-        "/bin/bash /opt/pathsteer/scripts/controller-route-switch.sh %s &",
-        UPLINK_NAMES[target]);
-    system(cmd);
-    
-    /* Step 4: Actuation confirmed — update state */
     pthread_mutex_lock(&g_mutex);
     g_uplinks[old].is_active = false;
     g_uplinks[target].is_active = true;
@@ -1012,103 +898,8 @@ static void execute_switch(uplink_id_t target) {
     g_status.switches_this_window++;
     g_status.switch_start_us = now_us();
     pthread_mutex_unlock(&g_mutex);
-    
-    log_event("switch_ok", "{\"from\":\"%s\",\"to\":\"%s\",\"vip_dev\":\"%s\"}",
-              UPLINK_NAMES[old], UPLINK_NAMES[target], VIP_DEVS[target]);
 }
 
-/*-----------------------------------------------------------------------------
- * execute_ecmp() - Set multi-nexthop ECMP routes across active uplinks
- * mask: bitmask of uplinks to include (bit 0 = cell_a, bit 5 = fb)
- *---------------------------------------------------------------------------*/
-static void execute_ecmp(uint8_t mask) {
-    char cmd[1024];
-    char v4_nhops[512] = "";
-    char v6_nhops[512] = "";
-    char ctrl_v4[512] = "";
-    char ctrl_v6[512] = "";
-    int count = 0;
-
-    static const char* SVC_DEVS[] = {
-        "svc_ca", "svc_cb", "svc_sl_a", "svc_sl_b", "svc_fa", "svc_fb"
-    };
-    static const char* SVC_GWS[] = {
-        "10.203.5.2", "10.203.6.2", "10.203.3.2", "10.203.4.2", "10.203.1.2", "10.203.2.2"
-    };
-    static const char* OUTER_DEVS[] = {
-        "outer_ca", "outer_cb", "outer_sl_a", "outer_sl_b", "outer_fa", "outer_fb"
-    };
-    static const char* OUTER_GWS6[] = {
-        "fd10:ca::2", "fd10:cb::2", "fd10:a1::2", "fd10:b1::2", "fd10:fa::2", "fd10:fb::2"
-    };
-
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        if (!(mask & (1 << i))) continue;
-        if (!g_uplinks[i].enabled || !g_uplinks[i].available) continue;
-
-        char tmp[128];
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", VIP_GWS[i], VIP_DEVS[i]);
-        strncat(v4_nhops, tmp, sizeof(v4_nhops) - strlen(v4_nhops) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", VIP_GWS6[i], VIP_DEVS[i]);
-        strncat(v6_nhops, tmp, sizeof(v6_nhops) - strlen(v6_nhops) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", SVC_GWS[i], SVC_DEVS[i]);
-        strncat(ctrl_v4, tmp, sizeof(ctrl_v4) - strlen(ctrl_v4) - 1);
-
-        snprintf(tmp, sizeof(tmp), " nexthop via %s dev %s weight 1", OUTER_GWS6[i], OUTER_DEVS[i]);
-        strncat(ctrl_v6, tmp, sizeof(ctrl_v6) - strlen(ctrl_v6) - 1);
-
-        count++;
-    }
-
-    if (count == 0) {
-        log_event("ecmp_fail", "{\"reason\":\"no_healthy_uplinks\"}");
-        return;
-    }
-
-    if (count == 1) {
-        for (int i = 0; i < UPLINK_COUNT; i++) {
-            if ((mask & (1 << i)) && g_uplinks[i].enabled && g_uplinks[i].available) {
-                execute_switch(i);
-                return;
-            }
-        }
-    }
-
-    snprintf(cmd, sizeof(cmd), "ip netns exec ns_vip ip route replace default%s", v4_nhops);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd), "ip netns exec ns_vip ip -6 route replace default%s", v6_nhops);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd),
-        "/bin/bash -c 'ssh -o BatchMode=yes -o ConnectTimeout=3 pathsteer@104.204.136.13 "
-        "\"sudo ip netns exec ns_svc ip route replace 104.204.138.48/28%s\"' &",
-        ctrl_v4);
-    system(cmd);
-
-    snprintf(cmd, sizeof(cmd),
-        "/bin/bash -c 'ssh -o BatchMode=yes -o ConnectTimeout=3 pathsteer@104.204.136.13 "
-        "\"sudo ip -6 route replace 2602:f644:10::/56%s\"' &",
-        ctrl_v6);
-    system(cmd);
-
-    pthread_mutex_lock(&g_mutex);
-    g_status.ecmp_mask = mask;
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        g_uplinks[i].is_active = (mask & (1 << i)) ? true : false;
-    }
-    for (int i = 0; i < UPLINK_COUNT; i++) {
-        if ((mask & (1 << i)) && g_uplinks[i].enabled && g_uplinks[i].available) {
-            g_status.active_uplink = i;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&g_mutex);
-
-    log_event("ecmp_set", "{\"mask\":%d,\"count\":%d}", mask, count);
-}
 /*=============================================================================
  * PROTECTION MODE TICK
  * 
@@ -1227,8 +1018,9 @@ static void chaos_read(void) {
         g_uplinks[i].chaos_loss = 0;
     }
 
-    /* Parse simple JSON - look for each uplink by canonical name */
+    /* Parse simple JSON - look for each uplink */
     const char* names[] = {"cell_a", "cell_b", "sl_a", "sl_b", "fa", "fb"};
+    const char* internal[] = {"cell_a", "cell_b", "sl_a", "sl_b", "fiber1", "fiber2"};
     for (int i = 0; i < UPLINK_COUNT; i++) {
         char pattern[64];
         snprintf(pattern, sizeof(pattern), "\"%s\"", names[i]);
@@ -1251,17 +1043,17 @@ static void uplink_poll(uplink_t* u) {
     int64_t start = now_us();
     double rtt;
     if (u->type == UPLINK_TYPE_LTE) {
-        /* Cellular: ping controller via raw modem interface (path-correct) */
-
-        rtt = probe_rtt_iface(u->interface, "104.204.136.13");
+        /* Cellular: ping WG peer through WG interface */
+        const char* wg_iface = (u->id == UPLINK_CELL_A) ? "wg-ca-cA" : "wg-cb-cA";
+        const char* wg_peer = (u->id == UPLINK_CELL_A) ? "10.200.1.1" : "10.200.2.1";
+        rtt = probe_rtt_iface(wg_iface, wg_peer);
     } else {
         rtt = probe_rtt(u->netns, "8.8.8.8");
     }
     
     /* Record in history */
     int idx = u->history_idx % HISTORY_SIZE;
-    /* Apply chaos to history so tripwire sees it */
-    u->history[idx].rtt_ms = rtt + u->chaos_rtt + (u->chaos_jitter * ((double)rand()/RAND_MAX - 0.5) * 2);
+    u->history[idx].rtt_ms = rtt;
     u->history[idx].success = (rtt > 0);
     u->history[idx].timestamp_us = start;
     u->history_idx++;
@@ -1297,6 +1089,7 @@ static void uplink_poll(uplink_t* u) {
     if (total > 0) {
         u->loss_pct = 100.0 * (total - success) / total;
         u->loss_pct += u->chaos_loss; if (u->loss_pct > 100.0) u->loss_pct = 100.0;  /* Add chaos injection */
+    /* DEBUG */ if (u->type == UPLINK_TYPE_STARLINK) { syslog(LOG_INFO, "SL %s: rtt=%.1f hidx=%d total=%d success=%d loss=%.1f", u->name, rtt, u->history_idx, total, success, u->loss_pct); }
     }
     
     /* Poll type-specific data */
@@ -1439,23 +1232,24 @@ static void starlink_poll(uplink_t* u) {
 static void gps_poll(void) {
     if (!g_config.gps_enabled) return;
     
-    FILE* fp = fopen("/run/pathsteer/gps.json", "r");
+    FILE* fp = popen("gpspipe -w -n 1 2>/dev/null | grep -m1 TPV", "r");
     if (!fp) return;
     
     char buf[1024];
     if (fgets(buf, sizeof(buf), fp)) {
         char* lat = strstr(buf, "\"lat\":");
         char* lon = strstr(buf, "\"lon\":");
-        char* spd = strstr(buf, "\"speed_mph\":");
-        char* fix = strstr(buf, "\"fix\": true");
+        char* spd = strstr(buf, "\"speed\":");
+        char* hdg = strstr(buf, "\"track\":");
         
         if (lat) g_gps.latitude = atof(lat + 6);
         if (lon) g_gps.longitude = atof(lon + 6);
-        if (spd) g_gps.speed_mps = atof(spd + 13) / 2.237;
-        g_gps.valid = (fix != NULL && lat && lon);
+        if (spd) g_gps.speed_mps = atof(spd + 8);
+        if (hdg) g_gps.heading = atof(hdg + 8);
+        g_gps.valid = (lat && lon);
         g_gps.timestamp_us = now_us();
     }
-    fclose(fp);
+    pclose(fp);
 }
 
 /*=============================================================================
@@ -1511,7 +1305,7 @@ static void prediction_tick(void) {
  *===========================================================================*/
 
 static void status_write(void) {
-    FILE* fp = fopen("/run/pathsteer/status.json.tmp", "w");
+    FILE* fp = fopen("/run/pathsteer/status.json", "w");
     if (!fp) return;
     
     pthread_mutex_lock(&g_mutex);
@@ -1521,7 +1315,6 @@ static void status_write(void) {
     
     fprintf(fp, "{\n");
     fprintf(fp, "  \"mode\": \"%s\",\n", MODE_NAMES[g_status.mode]);
-    fprintf(fp, "  \"ecmp_mask\": %d,\n", g_status.ecmp_mask);
     fprintf(fp, "  \"state\": \"%s\",\n", STATE_NAMES[g_status.state]);
     fprintf(fp, "  \"trigger\": \"%s\",\n", TRIGGER_NAMES[g_status.last_trigger]);
     fprintf(fp, "  \"trigger_detail\": \"%s\",\n", g_status.trigger_detail);
@@ -1535,8 +1328,6 @@ static void status_write(void) {
     fprintf(fp, "  \"global_risk\": %.2f,\n", g_status.global_risk);
     fprintf(fp, "  \"recommendation\": \"%s\",\n", g_status.recommendation);
     fprintf(fp, "  \"run_id\": \"%s\",\n", g_status.run_id);
-    fprintf(fp, "  \"last_cmd\": {\"id\": \"%s\", \"result\": \"%s\", \"detail\": \"%s\"},\n",
-            g_last_cmd_id, g_last_cmd_result, g_last_cmd_detail);
     
     /* GPS */
     fprintf(fp, "  \"gps\": {\"valid\": %s, \"lat\": %.6f, \"lon\": %.6f, \"speed_mph\": %.1f, \"heading\": %.1f},\n",
@@ -1568,256 +1359,98 @@ static void status_write(void) {
     fprintf(fp, "}\n");
     
     pthread_mutex_unlock(&g_mutex);
-    fflush(fp);
-    fsync(fileno(fp));
     fclose(fp);
-    rename("/run/pathsteer/status.json.tmp", "/run/pathsteer/status.json");
 }
 
 /*=============================================================================
  * COMMAND PROCESSING
  * 
- * Primary: scan /run/pathsteer/cmdq/ directory (FIFO by filename).
- * Fallback: single /run/pathsteer/command file (legacy, optional).
- * Each command results in ack/exec/fail reflected in status.
+ * Reads commands from /run/pathsteer/command file (written by Web UI).
  *===========================================================================*/
 
-/* Result of last command, written into status.json (globals declared above) */
-
-static void process_one_command(const char* cmd, const char* cmd_id) {
-    strncpy(g_last_cmd_id, cmd_id, sizeof(g_last_cmd_id) - 1);
-    g_last_cmd_id[sizeof(g_last_cmd_id) - 1] = '\0';
-    
-    if (strncmp(cmd, "mode:", 5) == 0) {
-            const char* mode = cmd + 5;
-            if (strcmp(mode, "training") == 0) {
-                g_status.mode = MODE_TRAINING;
-                dup_disable();
-            } else if (strcmp(mode, "tripwire") == 0) {
-                g_status.mode = MODE_TRIPWIRE;
-                g_status.ecmp_mask = 0;
-                g_status.force_locked = false;
-                {
-                    uplink_id_t best = select_best_uplink();
-                    execute_switch(best);
-                }
-            } else if (strcmp(mode, "mirror") == 0) {
-                g_status.mode = MODE_MIRROR;
-            } else if (strcmp(mode, "ecmp") == 0) {
-                g_status.mode = MODE_ECMP;
-                g_status.ecmp_auto = true;
-                uint8_t mask = 0;
-                for (int i = 0; i < UPLINK_COUNT; i++) {
-                    if (g_uplinks[i].enabled && g_uplinks[i].available) mask |= (1 << i);
-                }
-                g_status.ecmp_mask = mask;
-                g_status.ecmp_requested = mask;
-                g_status.force_locked = false;
-                execute_ecmp(mask);
-                dup_enable("br-lan", g_uplinks[1].veth);  /* Always dup in mirror */
-            }
-            log_event("mode_change", "{\"mode\":\"%s\"}", MODE_NAMES[g_status.mode]);
-            strcpy(g_last_cmd_result, "exec");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "mode=%s", MODE_NAMES[g_status.mode]);
-            
-        } else if (strncmp(cmd, "force:", 6) == 0) {
-            const char* uplink = cmd + 6;
-            /* force:auto clears the lock and resets flap suppressor */
-            if (strcmp(uplink, "auto") == 0) {
-                g_status.force_locked = false;
-                g_status.switches_this_window = 0;
-                g_status.state = STATE_NORMAL;
-                /* Immediate re-evaluation: pick best uplink now */
-                {
-                    uplink_id_t best = select_best_uplink();
-                    if (best != g_status.active_uplink) {
-                        execute_switch(best);
-                    }
-                }
-                strcpy(g_last_cmd_result, "exec");
-                snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "force=auto");
-            } else {
-            bool found = false;
-            for (int i = 0; i < UPLINK_COUNT; i++) {
-                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
-                    g_uplinks[i].force_failed = false;  /* Clear any force_fail */
-                    g_uplinks[i].available = true;
-                    execute_switch(i);
-                    found = true;
-                    g_status.force_locked = true;
-                    break;
-                }
-            }
-            strcpy(g_last_cmd_result, found ? "exec" : "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "force=%s", uplink);
-            } /* end else (not auto) */
-            
-        } else if (strncmp(cmd, "ecmp:", 5) == 0) {
-            const char* list = cmd + 5;
-            uint8_t mask = 0;
-            char buf[128];
-            strncpy(buf, list, sizeof(buf) - 1);
-            buf[sizeof(buf) - 1] = '\0';
-            char* tok = strtok(buf, ",");
-            while (tok) {
-                for (int i = 0; i < UPLINK_COUNT; i++) {
-                    if (strcmp(UPLINK_NAMES[i], tok) == 0) {
-                        mask |= (1 << i);
-                        break;
-                    }
-                }
-                tok = strtok(NULL, ",");
-            }
-            if (mask && __builtin_popcount(mask) >= 2) {
-                g_status.mode = MODE_ECMP;
-                g_status.ecmp_auto = false;
-                g_status.ecmp_mask = mask;
-                g_status.ecmp_requested = mask;
-                g_status.force_locked = false;
-                execute_ecmp(mask);
-                strcpy(g_last_cmd_result, "exec");
-                snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "ecmp=0x%02x", mask);
-            } else {
-                strcpy(g_last_cmd_result, "fail");
-                snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "ecmp_need_2+_uplinks");
-            }
-        } else if (strcmp(cmd, "trigger") == 0) {
-            tripwire_fire(TRIGGER_MANUAL, "operator");
-            strcpy(g_last_cmd_result, "exec");
-            strcpy(g_last_cmd_detail, "manual_trigger");
-            
-        } else if (strncmp(cmd, "c8000:", 6) == 0) {
-            int ctrl = atoi(cmd + 6);
-            c8000_switch(ctrl);
-            strcpy(g_last_cmd_result, "exec");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "c8000=%d", ctrl);
-
-        } else if (strncmp(cmd, "enable:", 7) == 0) {
-            const char* uplink = cmd + 7;
-            bool found = false;
-            for (int i = 0; i < UPLINK_COUNT; i++) {
-                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
-                    g_uplinks[i].enabled = true;
-                    log_event("uplink_enabled", "{\"uplink\":\"%s\"}", uplink);
-                    found = true;
-                    break;
-                }
-            }
-            strcpy(g_last_cmd_result, found ? "exec" : "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "enable=%s", uplink);
-
-        } else if (strncmp(cmd, "disable:", 8) == 0) {
-            const char* uplink = cmd + 8;
-            bool found = false;
-            for (int i = 0; i < UPLINK_COUNT; i++) {
-                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
-                    g_uplinks[i].enabled = false;
-                    log_event("uplink_disabled", "{\"uplink\":\"%s\"}", uplink);
-                    found = true;
-                    break;
-                }
-            }
-            strcpy(g_last_cmd_result, found ? "exec" : "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "disable=%s", uplink);
-
-        } else if (strncmp(cmd, "fail:", 5) == 0) {
-            const char* uplink = cmd + 5;
-            bool found = false;
-            for (int i = 0; i < UPLINK_COUNT; i++) {
-                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
-                    g_uplinks[i].available = false;
-                    g_uplinks[i].force_failed = true;
-                    g_uplinks[i].consec_fail = 10;
-                    log_event("uplink_force_fail", "{\"uplink\":\"%s\"}", uplink);
-                    found = true;
-                    break;
-                }
-            }
-            strcpy(g_last_cmd_result, found ? "exec" : "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "fail=%s", uplink);
-
-        } else if (strncmp(cmd, "unfail:", 7) == 0) {
-            const char* uplink = cmd + 7;
-            bool found = false;
-            for (int i = 0; i < UPLINK_COUNT; i++) {
-                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
-                    g_uplinks[i].force_failed = false;
-                    g_uplinks[i].available = true;
-                    g_uplinks[i].consec_fail = 0;
-                    log_event("uplink_unfail", "{\"uplink\":\"%s\"}", uplink);
-                    found = true;
-                    break;
-                }
-            }
-            strcpy(g_last_cmd_result, found ? "exec" : "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "unfail=%s", uplink);
-        } else {
-            strcpy(g_last_cmd_result, "fail");
-            snprintf(g_last_cmd_detail, sizeof(g_last_cmd_detail), "unknown_cmd");
-        }
-    
-    log_event("cmd_result", "{\"id\":\"%s\",\"result\":\"%s\",\"detail\":\"%s\"}",
-              g_last_cmd_id, g_last_cmd_result, g_last_cmd_detail);
-}
-
 static void commands_process(void) {
-    /*
-     * Primary: process /run/pathsteer/cmdq/ directory (FIFO by filename).
-     * Files are named <timestamp>-<cmd_id>.cmd for ordering.
-     */
-    DIR* dir = opendir("/run/pathsteer/cmdq");
-    if (dir) {
-        /* Collect filenames and sort for FIFO */
-        char filenames[64][256];
-        int count = 0;
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != NULL && count < 64) {
-            if (entry->d_name[0] == '.') continue;
-            size_t len = strlen(entry->d_name);
-            if (len < 5 || strcmp(entry->d_name + len - 4, ".cmd") != 0) continue;
-            snprintf(filenames[count], sizeof(filenames[count]), "%s", entry->d_name);
-            count++;
-        }
-        closedir(dir);
-        
-        /* Sort by filename (timestamp prefix gives FIFO order) */
-        for (int i = 0; i < count - 1; i++) {
-            for (int j = i + 1; j < count; j++) {
-                if (strcmp(filenames[i], filenames[j]) > 0) {
-                    char tmp[256];
-                    strcpy(tmp, filenames[i]);
-                    strcpy(filenames[i], filenames[j]);
-                    strcpy(filenames[j], tmp);
-                }
-            }
-        }
-        
-        /* Process each command file */
-        for (int i = 0; i < count; i++) {
-            char path[512];
-            snprintf(path, sizeof(path), "/run/pathsteer/cmdq/%s", filenames[i]);
-            FILE* fp = fopen(path, "r");
-            if (!fp) continue;
-            char cmd[256];
-            if (fgets(cmd, sizeof(cmd), fp)) {
-                cmd[strcspn(cmd, "\n")] = 0;
-                process_one_command(cmd, filenames[i]);
-            }
-            fclose(fp);
-            unlink(path);  /* Delete processed file */
-        }
-    }
-    
-    /*
-     * Legacy fallback: single /run/pathsteer/command file.
-     */
     FILE* fp = fopen("/run/pathsteer/command", "r");
     if (!fp) return;
     
     char cmd[256];
     if (fgets(cmd, sizeof(cmd), fp)) {
         cmd[strcspn(cmd, "\n")] = 0;
-        process_one_command(cmd, "legacy");
+        
+        if (strncmp(cmd, "mode:", 5) == 0) {
+            const char* mode = cmd + 5;
+            if (strcmp(mode, "training") == 0) {
+                g_status.mode = MODE_TRAINING;
+                dup_disable();
+            } else if (strcmp(mode, "tripwire") == 0) {
+                g_status.mode = MODE_TRIPWIRE;
+            } else if (strcmp(mode, "mirror") == 0) {
+                g_status.mode = MODE_MIRROR;
+                dup_enable("br-lan", g_uplinks[1].veth);  /* Always dup in mirror */
+            }
+            log_event("mode_change", "{\"mode\":\"%s\"}", MODE_NAMES[g_status.mode]);
+            
+        } else if (strncmp(cmd, "force:", 6) == 0) {
+            const char* uplink = cmd + 6;
+            for (int i = 0; i < UPLINK_COUNT; i++) {
+                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
+                    g_uplinks[i].force_failed = false;  /* Clear any force_fail */
+                    g_uplinks[i].available = true;
+                    execute_switch(i);
+                    break;
+                }
+            }
+            
+        } else if (strcmp(cmd, "trigger") == 0) {
+            tripwire_fire(TRIGGER_MANUAL, "operator");
+            
+        } else if (strncmp(cmd, "c8000:", 6) == 0) {
+            int ctrl = atoi(cmd + 6);
+            c8000_switch(ctrl);
+        } else if (strncmp(cmd, "enable:", 7) == 0) {
+            const char* uplink = cmd + 7;
+            for (int i = 0; i < UPLINK_COUNT; i++) {
+                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
+                    g_uplinks[i].enabled = true;
+                    log_event("uplink_enabled", "{\"uplink\":\"%s\"}", uplink);
+                    break;
+                }
+            }
+        } else if (strncmp(cmd, "disable:", 8) == 0) {
+            const char* uplink = cmd + 8;
+            for (int i = 0; i < UPLINK_COUNT; i++) {
+                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
+                    g_uplinks[i].enabled = false;
+                    log_event("uplink_disabled", "{\"uplink\":\"%s\"}", uplink);
+                    break;
+                }
+            }
+        /* Force fail command - marks uplink unavailable to trigger failover */
+        } else if (strncmp(cmd, "fail:", 5) == 0) {
+            const char* uplink = cmd + 5;
+            for (int i = 0; i < UPLINK_COUNT; i++) {
+                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
+                    /* Mark as unavailable - this triggers path selection */
+                    g_uplinks[i].available = false;
+                    g_uplinks[i].force_failed = true;  /* Sticky until cleared */
+                    g_uplinks[i].consec_fail = 10;  /* High fail count forces switch */
+                    log_event("uplink_force_fail", "{\"uplink\":\"%s\"}", uplink);
+                    break;
+                }
+            }
+        }
+        /* Unfail command - clears force_failed flag, restores uplink */
+        else if (strncmp(cmd, "unfail:", 7) == 0) {
+            const char* uplink = cmd + 7;
+            for (int i = 0; i < UPLINK_COUNT; i++) {
+                if (strcmp(UPLINK_NAMES[i], uplink) == 0) {
+                    g_uplinks[i].force_failed = false;
+                    g_uplinks[i].available = true;
+                    g_uplinks[i].consec_fail = 0;
+                    log_event("uplink_unfail", "{\"uplink\":\"%s\"}", uplink);
+                    break;
+                }
+            }
+        }
     }
     
     fclose(fp);
@@ -1864,7 +1497,7 @@ static void uplinks_init(void) {
     g_uplinks[UPLINK_CELL_A].type = UPLINK_TYPE_LTE;
     strcpy(g_uplinks[UPLINK_CELL_A].name, "cell_a");
     strcpy(g_uplinks[UPLINK_CELL_A].interface, "wwan0");
-    strcpy(g_uplinks[UPLINK_CELL_A].netns, "ns_cell_a");
+    g_uplinks[UPLINK_CELL_A].netns[0] = '\0';
     strcpy(g_uplinks[UPLINK_CELL_A].veth, "veth_cell_a");
     strcpy(g_uplinks[UPLINK_CELL_A].cellular.carrier, "T-Mobile");
     g_uplinks[UPLINK_CELL_A].enabled = true;
@@ -1875,7 +1508,7 @@ static void uplinks_init(void) {
     g_uplinks[UPLINK_CELL_B].type = UPLINK_TYPE_LTE;
     strcpy(g_uplinks[UPLINK_CELL_B].name, "cell_b");
     strcpy(g_uplinks[UPLINK_CELL_B].interface, "wwan1");
-    strcpy(g_uplinks[UPLINK_CELL_B].netns, "ns_cell_b");
+    g_uplinks[UPLINK_CELL_B].netns[0] = '\0';
     strcpy(g_uplinks[UPLINK_CELL_B].veth, "veth_cell_b");
     strcpy(g_uplinks[UPLINK_CELL_B].cellular.carrier, "AT&T");
     g_uplinks[UPLINK_CELL_B].enabled = true;
@@ -1939,7 +1572,6 @@ int main(int argc, char** argv) {
     signal(SIGPIPE, SIG_IGN);
     
     mkdir("/run/pathsteer", 0755);
-    mkdir("/run/pathsteer/cmdq", 0755);
     mkdir("/var/lib/pathsteer", 0755);
     mkdir("/var/lib/pathsteer/logs", 0755);
     
@@ -1997,16 +1629,6 @@ int main(int argc, char** argv) {
     g_status.state = STATE_NORMAL;
     strcpy(g_status.recommendation, "NORMAL");
     
-    /* Install initial ns_vip route for default active uplink */
-    {
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd),
-            "ip netns exec ns_vip ip route replace default via %s dev %s",
-            VIP_GWS[g_status.active_uplink], VIP_DEVS[g_status.active_uplink]);
-        system(cmd);
-        log_event("init_route", "{\"vip_dev\":\"%s\",\"vip_gw\":\"%s\"}",
-                  VIP_DEVS[g_status.active_uplink], VIP_GWS[g_status.active_uplink]);
-    }
     log_event("startup", "{\"version\":\"%s\",\"run_id\":\"%s\",\"config\":\"%s\"}",
               VERSION, g_status.run_id, config_path);
     
@@ -2022,8 +1644,8 @@ int main(int argc, char** argv) {
         
         /* Probe uplinks */
         if (now_t - last_probe >= probe_interval) {
-            chaos_read();  /* Read chaos injection values once per cycle */
             for (int i = 0; i < UPLINK_COUNT; i++) {
+        chaos_read();  /* Read chaos injection values */
                 uplink_poll(&g_uplinks[i]);
             }
             last_probe = now_t;
@@ -2046,35 +1668,9 @@ int main(int argc, char** argv) {
             switch (g_status.state) {
                 case STATE_NORMAL:
                 case STATE_PREPARE: {
-                    /* ECMP recovery: re-add healthy uplinks that were removed */
-                    if (g_status.mode == MODE_ECMP && g_status.ecmp_mask) {
-                        uint8_t target = g_status.ecmp_auto ? 0x3F : g_status.ecmp_requested;
-                        uint8_t new_mask = 0;
-                        for (int i = 0; i < UPLINK_COUNT; i++) {
-                            if (!(target & (1 << i))) continue;
-                            if (g_uplinks[i].enabled && g_uplinks[i].available &&
-                                g_uplinks[i].rtt_ms > 0 && g_uplinks[i].loss_pct < 20.0) {
-                                new_mask |= (1 << i);
-                            }
-                        }
-                        if (new_mask != g_status.ecmp_mask && new_mask && __builtin_popcount(new_mask) >= 2) {
-                            execute_ecmp(new_mask);
-                        }
-                    }
                     uplink_t* active = &g_uplinks[g_status.active_uplink];
                     trigger_t t = tripwire_check(active);
                     if (t != TRIGGER_NONE) {
-                        /* ECMP mode: remove degraded link instead of full switch */
-                        if (g_status.mode == MODE_ECMP && g_status.ecmp_mask) {
-                            uint8_t new_mask = g_status.ecmp_mask & ~(1 << g_status.active_uplink);
-                            if (new_mask) {
-                                log_event("ecmp_degrade", "{\"removed\":\"%s\",\"mask\":%d}",
-                                    UPLINK_NAMES[g_status.active_uplink], new_mask);
-                                g_status.ecmp_mask = new_mask;
-                                execute_ecmp(new_mask);
-                                break;
-                            }
-                        }
                         tripwire_fire(t, TRIGGER_NAMES[t]);
                     }
                     break;
